@@ -18,10 +18,13 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.8.3",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
@@ -29,8 +32,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.10.1",
     "eslint": "^9.15.0",
     "eslint-config-prettier": "^9.1.0",

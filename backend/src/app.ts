@@ -1,9 +1,11 @@
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Application } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { API_PREFIX } from '@/config/constants';
 import { env } from '@/config/env';
+import { authRouter } from '@/modules/auth/auth.routes';
 import { healthRouter } from '@/modules/health/health.routes';
 import { errorHandler } from '@/shared/middlewares/errorHandler.middleware';
 import { notFoundHandler } from '@/shared/middlewares/notFound.middleware';
@@ -20,9 +22,11 @@ export function createApp(): Application {
     }),
   );
   app.use(express.json({ limit: '10kb' }));
+  app.use(cookieParser());
   app.use(pinoHttp({ logger }));
 
   app.use(API_PREFIX, healthRouter);
+  app.use(API_PREFIX, authRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
