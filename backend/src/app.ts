@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { API_PREFIX } from '@/config/constants';
 import { env } from '@/config/env';
+import { analysisRouter } from '@/modules/analysis/analysis.routes';
 import { authRouter } from '@/modules/auth/auth.routes';
 import { healthRouter } from '@/modules/health/health.routes';
 import { errorHandler } from '@/shared/middlewares/errorHandler.middleware';
@@ -27,6 +28,7 @@ export function createApp(): Application {
 
   app.use(API_PREFIX, healthRouter);
   app.use(API_PREFIX, authRouter);
+  app.use(API_PREFIX, analysisRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
