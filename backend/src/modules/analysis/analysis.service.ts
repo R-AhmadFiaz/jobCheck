@@ -10,6 +10,13 @@ import { computeRiskScore, computeRiskLevel } from '@/modules/analysis/engine/sc
 import type { RiskLevel } from '@/shared/types/riskLevel';
 import { env } from '@/config/env';
 import { logger } from '@/shared/utils/logger';
+import {
+  isGeminiConfigured,
+  validateJobPostingContent,
+  shouldRejectAsNonJobContent,
+  generateExplanation,
+  formatExplanationForStorage,
+} from '@/modules/analysis/engine/ai/gemini.service';
 
 // Sentinel a record would carry if it were ever persisted before evaluation.
 // Kept only so `deriveStatus` stays meaningful for any such record; every
@@ -54,6 +61,52 @@ async function evaluateJobText(rawText: string): Promise<EvaluatedPosting> {
   return { normalizedText, extractedFields, redFlags, riskScore, riskLevel };
 }
 
+interface PipelineResult extends EvaluatedPosting {
+  aiExplanation: string | null;
+  aiConfidence: number | null;
+}
+
+/**
+ * The full pipeline both createAnalysis and createPublicAnalysis run
+ * through: optional Gemini validation (advisory, fail-open) → the existing
+ * rule engine (evaluateJobText — unchanged, sole scoring authority) →
+ * optional Gemini explanation (advisory, fail-open). Gemini can never set or
+ * override a score, and its unavailability (no API key, timeout, quota,
+ * malformed response) never blocks analysis — see docs/ARCHITECTURE.md §8.
+ */
+async function runAnalysisPipeline(rawText: string): Promise<PipelineResult> {
+  if (isGeminiConfigured()) {
+    const validation = await validateJobPostingContent(rawText);
+    if (shouldRejectAsNonJobContent(validation)) {
+      throw new ApiError(
+        400,
+        validation?.reason ||
+          'This does not appear to be a job posting. Please enter a job description, recruitment message, or offer letter to analyze.',
+      );
+    }
+  }
+
+  const evaluated = await evaluateJobText(rawText);
+
+  let aiExplanation: string | null = null;
+  let aiConfidence: number | null = null;
+  if (isGeminiConfigured()) {
+    const explanation = await generateExplanation({
+      rawText,
+      riskScore: evaluated.riskScore,
+      riskLevel: evaluated.riskLevel,
+      redFlags: evaluated.redFlags,
+      greenFlags: [],
+    });
+    if (explanation) {
+      aiExplanation = formatExplanationForStorage(explanation);
+      aiConfidence = explanation.confidence;
+    }
+  }
+
+  return { ...evaluated, aiExplanation, aiConfidence };
+}
+
 export async function createAnalysis(
   userId: string,
   input: CreateAnalysisInput,
@@ -70,7 +123,7 @@ export async function createAnalysis(
   }
 
   const submittedValue = input.jobText as string;
-  const evaluated = await evaluateJobText(submittedValue);
+  const evaluated = await runAnalysisPipeline(submittedValue);
 
   const analysis = await analysisRepository.createAnalysis({
     userId: new Types.ObjectId(userId),
@@ -83,6 +136,8 @@ export async function createAnalysis(
     greenFlags: [],
     engineVersion: ENGINE_VERSION,
     isSaved: true,
+    aiExplanation: evaluated.aiExplanation,
+    aiConfidence: evaluated.aiConfidence,
   });
 
   return { analysis, status: deriveStatus(analysis) };
@@ -132,7 +187,7 @@ export async function createPublicAnalysis(
     );
   }
 
-  const evaluated = await evaluateJobText(combinedText);
+  const evaluated = await runAnalysisPipeline(combinedText);
 
   const analysis = await analysisRepository.createAnalysis({
     userId: null,
@@ -145,6 +200,8 @@ export async function createPublicAnalysis(
     greenFlags: [],
     engineVersion: ENGINE_VERSION,
     isSaved: false,
+    aiExplanation: evaluated.aiExplanation,
+    aiConfidence: evaluated.aiConfidence,
     sourceMetadata: {
       url: source.url ?? null,
       hasDescription: Boolean(source.description),

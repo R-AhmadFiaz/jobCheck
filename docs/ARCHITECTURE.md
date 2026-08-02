@@ -456,8 +456,14 @@ Representative rule categories: upfront-payment requests, vague job descriptions
 **Stage 3 — Scoring** (`scoring.ts`)
 Accumulated weight is normalized into a 0–100 `riskScore` with diminishing returns (so one severe flag doesn't need ten more to hit 100, and the score doesn't runaway-saturate), then banded into `riskLevel` (0–24 low, 25–49 medium, 50–74 high, 75–100 critical). `engineVersion` is stamped onto the result so a later change to weights/rules doesn't retroactively change the meaning of a past analysis.
 
-**Stage 4 — AI explanation (Advanced phase, not MVP)** (`engine/ai/`)
-The rule engine's structured output (matched flags + raw text) is passed as context to an LLM behind `IAIProvider`. The model's job is narrow: produce a human-readable explanation and an independent `aiConfidence` (0–1) — it does not replace the deterministic score. Once this lands, the *displayed* score can optionally become a weighted blend of rule score and AI confidence; until then, `aiExplanation`/`aiConfidence` simply stay `null` and the UI shows rule-only results. If the AI call fails or times out, the system **must** degrade gracefully to rule-only output — AI is additive, never a hard dependency for a response.
+**Stage 4 — AI validation + explanation** (`engine/ai/gemini.service.ts`) — **implemented**, superseding the "Advanced phase, not MVP" placeholder this section originally described.
+
+Two advisory, fail-open Gemini calls now wrap `evaluateJobText` (in `analysis.service.ts::runAnalysisPipeline`), which is itself completely unchanged:
+
+- **Before scoring — validation.** Classifies whether the submitted text is actually a job posting/offer/recruitment message at all (a scam job posting still counts — this only screens out content unrelated to jobs entirely: chit-chat, technical questions, gibberish). A confident "not a job posting" verdict (`confidence ≥ 0.6`) causes a clean `400` before anything is persisted, matching the existing pattern of rejecting empty/invalid input early. A low-confidence or failed call is ignored and the text proceeds to the rule engine as before.
+- **After scoring — explanation.** Given the rule engine's already-computed score/flags, Gemini produces a plain-language explanation, recommendations, and observations, explicitly instructed not to propose a different score. `explanation` + `recommendations` + `observations` are folded into one formatted string and stored in the existing `aiExplanation` field; `confidence` (0–1) is stored in the existing `aiConfidence` field — **no new database fields were added**; both fields were already reserved on `IJobAnalysis` by this section's original plan and were simply unpopulated (`null`) until now.
+
+Gemini is never in a position to set or influence the risk score itself, and is never a hard dependency: `GEMINI_API_KEY` is optional, `isGeminiConfigured()` gates every call, and every failure mode (missing key, timeout, quota, non-2xx, malformed JSON) resolves to `null` rather than throwing — `aiExplanation`/`aiConfidence` simply stay `null` and the rule-only result is returned exactly as before Gemini existed.
 
 ---
 

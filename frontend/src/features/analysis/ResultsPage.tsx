@@ -20,6 +20,7 @@ import {
   ZapIcon,
   ClockIcon,
   SearchIcon,
+  SparklesIcon,
 } from '@/components/ui';
 import type { RiskLevel as UiRiskLevel } from '@/components/ui';
 import { getAnalysisById, getPublicReport } from '@/features/analysis/api/analysis.api';
@@ -39,6 +40,8 @@ interface DisplayReport {
   engineVersion: string;
   jobTitle: string | null;
   companyName: string | null;
+  aiExplanation: string | null;
+  aiConfidence: number | null;
 }
 
 function toUiRiskLevel(level: RiskLevel, score: number): UiRiskLevel {
@@ -104,6 +107,8 @@ export function ResultsPage() {
       engineVersion: ownerAnalysis.engineVersion,
       jobTitle: ownerAnalysis.extractedFields.jobTitle,
       companyName: ownerAnalysis.extractedFields.companyName,
+      aiExplanation: ownerAnalysis.aiExplanation,
+      aiConfidence: ownerAnalysis.aiConfidence,
     };
   }, [isPublicRoute, publicReport, ownerAnalysis]);
 
@@ -369,6 +374,42 @@ export function ResultsPage() {
                   >
                     View all {parsedFlags.length} indicators
                   </button>
+                )}
+              </Card>
+            )}
+
+            {/* Only rendered when Gemini produced an explanation — absent
+                (report.aiExplanation === null) whenever the AI layer isn't
+                configured or a call failed, so the page is identical to the
+                rule-engine-only experience in that case. */}
+            {report.aiExplanation && (
+              <Card>
+                <h3 className="font-bold text-[var(--foreground)] mb-4 flex items-center gap-2">
+                  <SparklesIcon size={16} className="text-[var(--primary)]" />
+                  AI Analysis
+                </h3>
+                <div className="space-y-3">
+                  {report.aiExplanation.split('\n\n').map((paragraph, i) => (
+                    <p
+                      key={i}
+                      className="text-sm text-[var(--foreground)] leading-relaxed whitespace-pre-line"
+                    >
+                      {paragraph}
+                    </p>
+                  ))}
+                </div>
+                {report.aiConfidence !== null && (
+                  <p className="mt-4 text-xs text-[var(--muted-foreground)]">
+                    Confidence:{' '}
+                    <span className="font-semibold text-[var(--foreground)]">
+                      {report.aiConfidence >= 0.75
+                        ? 'High'
+                        : report.aiConfidence >= 0.4
+                          ? 'Medium'
+                          : 'Low'}
+                    </span>{' '}
+                    ({Math.round(report.aiConfidence * 100)}%)
+                  </p>
                 )}
               </Card>
             )}

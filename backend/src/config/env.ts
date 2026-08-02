@@ -23,6 +23,10 @@ const envSchema = z.object({
     .int()
     .positive()
     .default(2 * 1024 * 1024),
+  // Optional — the app must work fully without it (rule engine only).
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
+  GEMINI_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
 });
 
 const parsed = envSchema.safeParse(process.env);

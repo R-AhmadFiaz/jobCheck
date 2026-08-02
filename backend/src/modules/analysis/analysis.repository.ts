@@ -12,6 +12,8 @@ export interface CreateAnalysisData {
   greenFlags: IJobAnalysis['greenFlags'];
   engineVersion: string;
   isSaved: boolean;
+  aiExplanation?: IJobAnalysis['aiExplanation'];
+  aiConfidence?: IJobAnalysis['aiConfidence'];
   sourceMetadata?: IJobAnalysis['sourceMetadata'];
 }
 
