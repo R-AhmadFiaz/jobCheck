@@ -26,6 +26,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { useDarkMode } from '@/hooks/useDarkMode';
 import { createPublicAnalysis } from '@/features/analysis/api/analysis.api';
 import { ApiClientError } from '@/lib/apiClient';
+import { useGoToAnalyzer } from '@/hooks/useGoToAnalyzer';
 
 const features = [
   {
@@ -111,12 +112,18 @@ export function LandingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const heroInputRef = useRef<HTMLInputElement>(null);
 
   const goToApp = () => navigate(user ? '/dashboard' : '/register');
+  const goToAnalyzer = useGoToAnalyzer();
 
-  // Guests: submit straight to the public endpoint and land on the results
-  // page directly — no intermediate Analyze page. Logged-in users keep the
-  // existing behavior (prefill + navigate to /analyze) unchanged.
+  // This box always goes straight to the public endpoint and lands on the
+  // results page directly — no intermediate Analyze form, no auth check,
+  // regardless of login state. It is intentionally NOT auth-aware: even a
+  // logged-in user typing here gets the instant, unsaved public result
+  // (same as a guest). Logged-in users who want their analysis saved to
+  // their account history use the Dashboard's "Analyze" button instead,
+  // which goes through useGoToAnalyzer to the authenticated /analyze page.
   const publicAnalysisMutation = useMutation({
     mutationFn: createPublicAnalysis,
     onSuccess: (result) => {
@@ -129,11 +136,6 @@ export function LandingPage() {
   const handleAnalyze = () => {
     if (!hasInput || publicAnalysisMutation.isPending) return;
     const trimmed = input.trim();
-
-    if (user) {
-      navigate('/analyze', { state: trimmed ? { prefill: trimmed } : undefined });
-      return;
-    }
 
     // URL analysis is temporarily disabled — always submit as description
     // text, even if the user pastes something that looks like a URL.
@@ -251,6 +253,7 @@ export function LandingPage() {
                   className="ml-3 text-[var(--muted-foreground)] flex-shrink-0"
                 />
                 <input
+                  ref={heroInputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
@@ -505,7 +508,17 @@ export function LandingPage() {
                 {user ? 'Go to dashboard' : 'Get started free'}
               </button>
               <button
-                onClick={() => navigate(user ? '/analyze' : '/register')}
+                onClick={() => {
+                  if (user) {
+                    goToAnalyzer();
+                    return;
+                  }
+                  // Guests stay on the public flow — this button just gets
+                  // them to the input they can actually use, never /register
+                  // or any authenticated route.
+                  heroInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  heroInputRef.current?.focus();
+                }}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-white/10 text-white font-semibold hover:bg-white/20 transition-all border border-white/20"
               >
                 Analyze a job now

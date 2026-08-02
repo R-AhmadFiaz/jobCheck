@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
@@ -14,8 +14,6 @@ import {
   AlertTriangleIcon,
   CheckCircleIcon,
   CopyIcon,
-  DownloadIcon,
-  BookmarkIcon,
   ShareIcon,
   InfoIcon,
   ChevronDownIcon,
@@ -24,10 +22,24 @@ import {
   SearchIcon,
 } from '@/components/ui';
 import type { RiskLevel as UiRiskLevel } from '@/components/ui';
-import { getAnalysisById } from '@/features/analysis/api/analysis.api';
+import { getAnalysisById, getPublicReport } from '@/features/analysis/api/analysis.api';
 import { parseRedFlagDescription } from '@/features/analysis/parseRedFlag';
-import type { RiskLevel } from '@/features/analysis/types';
+import type { GreenFlag, RedFlag, RiskLevel } from '@/features/analysis/types';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useGoToAnalyzer } from '@/hooks/useGoToAnalyzer';
+
+// Normalized view both queryFns below map into, so all rendering code stays
+// source-agnostic. Deliberately mirrors only the fields this page renders.
+interface DisplayReport {
+  riskScore: number;
+  riskLevel: RiskLevel;
+  redFlags: RedFlag[];
+  greenFlags: GreenFlag[];
+  createdAt: string;
+  engineVersion: string;
+  jobTitle: string | null;
+  companyName: string | null;
+}
 
 function toUiRiskLevel(level: RiskLevel, score: number): UiRiskLevel {
   if (level === 'low' && score < 10) return 'safe';
@@ -47,23 +59,60 @@ const severityWeight: Record<'low' | 'medium' | 'high', number> = { low: 1, medi
 export function ResultsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
+  const goToAnalyzer = useGoToAnalyzer();
   const [tab, setTab] = useState('overview');
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [shareModal, setShareModal] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
-  const { data, isLoading, isError } = useQuery({
+  // This component is mounted at two different paths: the public, guest-
+  // reachable /results/:id (no auth, no ownership check — used for the
+  // guest's own result AND for anyone opening a shared report link) and the
+  // protected /analyses/:id (a logged-in user's own history, ownership-
+  // checked). Which one decides which endpoint is safe to call.
+  const isPublicRoute = location.pathname.startsWith('/results/');
+
+  const ownerQuery = useQuery({
     queryKey: ['analysis', id],
     queryFn: () => getAnalysisById(id!),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && !isPublicRoute,
   });
+
+  const publicQuery = useQuery({
+    queryKey: ['report', id],
+    queryFn: () => getPublicReport(id!),
+    enabled: Boolean(id) && isPublicRoute,
+  });
+
+  const isLoading = isPublicRoute ? publicQuery.isLoading : ownerQuery.isLoading;
+  const isError = isPublicRoute ? publicQuery.isError : ownerQuery.isError;
+
+  const ownerAnalysis = ownerQuery.data?.analysis;
+  const publicReport = publicQuery.data?.report;
+
+  const report: DisplayReport | undefined = useMemo(() => {
+    if (isPublicRoute) return publicReport;
+    if (!ownerAnalysis) return undefined;
+    return {
+      riskScore: ownerAnalysis.riskScore,
+      riskLevel: ownerAnalysis.riskLevel,
+      redFlags: ownerAnalysis.redFlags,
+      greenFlags: ownerAnalysis.greenFlags,
+      createdAt: ownerAnalysis.createdAt,
+      engineVersion: ownerAnalysis.engineVersion,
+      jobTitle: ownerAnalysis.extractedFields.jobTitle,
+      companyName: ownerAnalysis.extractedFields.companyName,
+    };
+  }, [isPublicRoute, publicReport, ownerAnalysis]);
 
   const parsedFlags = useMemo(
     () =>
-      (data?.analysis.redFlags ?? [])
+      (report?.redFlags ?? [])
         .map((flag) => ({ flag, parsed: parseRedFlagDescription(flag.description) }))
         .sort((a, b) => severityWeight[b.flag.severity] - severityWeight[a.flag.severity]),
-    [data],
+    [report],
   );
 
   const severityCounts = useMemo(() => {
@@ -93,7 +142,7 @@ export function ResultsPage() {
     );
   }
 
-  if (isError || !data) {
+  if (isError || !report) {
     return (
       <div className="p-6 md:p-8 max-w-6xl mx-auto">
         <Alert variant="error" title="Couldn't load this analysis">
@@ -103,12 +152,25 @@ export function ResultsPage() {
     );
   }
 
-  const { analysis } = data;
-  const score = analysis.riskScore;
-  const uiRiskLevel = toUiRiskLevel(analysis.riskLevel, score);
+  const score = report.riskScore;
+  const uiRiskLevel = toUiRiskLevel(report.riskLevel, score);
   const dashOffset = 283 - (283 * score) / 100;
-  const title = analysis.extractedFields.jobTitle ?? 'Job posting analysis';
-  const company = analysis.extractedFields.companyName ?? 'Unknown company';
+  const title = report.jobTitle ?? 'Job posting analysis';
+  const company = report.companyName ?? 'Unknown company';
+  const shareUrl = `${window.location.origin}/results/${id}`;
+
+  const handleCopyLink = () => {
+    void navigator.clipboard
+      .writeText(shareUrl)
+      .then(() => {
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+      })
+      .catch(() => {
+        // Clipboard permission denied/unavailable — the modal still shows
+        // the link itself so it can be copied manually.
+      });
+  };
 
   return (
     <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6">
@@ -117,7 +179,7 @@ export function ResultsPage() {
           <div className="flex items-center gap-2 mb-1">
             <RiskBadge level={uiRiskLevel} />
             <span className="text-xs text-[var(--muted-foreground)]">
-              Analyzed {new Date(analysis.createdAt).toLocaleString()}
+              Analyzed {new Date(report.createdAt).toLocaleString()}
             </span>
           </div>
           <h1
@@ -129,29 +191,15 @@ export function ResultsPage() {
           <p className="text-sm text-[var(--muted-foreground)] mt-0.5">{company}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Button variant="outline" size="sm" icon={<BookmarkIcon size={14} />} disabled>
-            Saved
-          </Button>
           <Button
             variant="outline"
             size="sm"
             icon={<ShareIcon size={14} />}
             onClick={() => setShareModal(true)}
           >
-            Share
+            Share Report
           </Button>
-          <Button variant="outline" size="sm" icon={<DownloadIcon size={14} />} disabled>
-            Export PDF
-          </Button>
-          <Button
-            size="sm"
-            icon={<ZapIcon size={14} />}
-            // Guests reach this page with no session at all (public /results/:id
-            // route) — /analyze is behind ProtectedRoute and would bounce them
-            // to /login. Send guests back to the homepage analyzer instead;
-            // logged-in users keep going straight to the authenticated page.
-            onClick={() => navigate(user ? '/analyze' : '/')}
-          >
+          <Button size="sm" icon={<ZapIcon size={14} />} onClick={() => goToAnalyzer()}>
             New scan
           </Button>
         </div>
@@ -209,12 +257,12 @@ export function ResultsPage() {
             <div>
               <RiskBadge level={uiRiskLevel} />
               <p className="text-sm text-[var(--muted-foreground)] mt-2 leading-relaxed">
-                {analysis.riskLevel === 'critical' || analysis.riskLevel === 'high' ? (
+                {report.riskLevel === 'critical' || report.riskLevel === 'high' ? (
                   <>
                     This posting shows strong indicators of fraud. We recommend{' '}
                     <strong>not applying</strong>.
                   </>
-                ) : analysis.riskLevel === 'medium' ? (
+                ) : report.riskLevel === 'medium' ? (
                   'This posting shows some signals worth reviewing before applying.'
                 ) : (
                   'No strong fraud signals were detected in this posting.'
@@ -239,12 +287,12 @@ export function ResultsPage() {
             {parsedFlags.length > 0 ? (
               <Alert
                 variant={
-                  analysis.riskLevel === 'critical' || analysis.riskLevel === 'high'
+                  report.riskLevel === 'critical' || report.riskLevel === 'high'
                     ? 'error'
                     : 'warning'
                 }
                 title={
-                  analysis.riskLevel === 'critical' || analysis.riskLevel === 'high'
+                  report.riskLevel === 'critical' || report.riskLevel === 'high'
                     ? 'Proceed with caution'
                     : 'A few things to review'
                 }
@@ -450,24 +498,30 @@ export function ResultsPage() {
             </div>
           )}
 
-          <Card className="border-[var(--primary)] gradient-border">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-xl bg-[var(--secondary)] flex items-center justify-center flex-shrink-0">
-                <ShieldCheckIcon size={18} className="text-[var(--primary)]" />
+          {/* Knowledge Base is an authenticated-only page — offering this to
+              a guest on the public /results/:id route would bounce them to
+              /login when clicked, which is exactly the class of leak this
+              page must never have. */}
+          {user && (
+            <Card className="border-[var(--primary)] gradient-border">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-[var(--secondary)] flex items-center justify-center flex-shrink-0">
+                  <ShieldCheckIcon size={18} className="text-[var(--primary)]" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-[var(--foreground)] mb-1">
+                    Find legitimate opportunities
+                  </h3>
+                  <p className="text-sm text-[var(--muted-foreground)] mb-3">
+                    Browse the Knowledge Base to research companies and recruiters before applying.
+                  </p>
+                  <Button size="sm" variant="secondary" onClick={() => navigate('/knowledge-base')}>
+                    Browse Knowledge Base
+                  </Button>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-[var(--foreground)] mb-1">
-                  Find legitimate opportunities
-                </h3>
-                <p className="text-sm text-[var(--muted-foreground)] mb-3">
-                  Browse the Knowledge Base to research companies and recruiters before applying.
-                </p>
-                <Button size="sm" variant="secondary" onClick={() => navigate('/knowledge-base')}>
-                  Browse Knowledge Base
-                </Button>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          )}
         </div>
       )}
 
@@ -479,7 +533,7 @@ export function ResultsPage() {
             {[
               { label: 'Job posting submitted', icon: <SearchIcon size={14} /> },
               {
-                label: `Rule evaluation completed (${analysis.engineVersion})`,
+                label: `Rule evaluation completed (${report.engineVersion})`,
                 icon: <ZapIcon size={14} />,
               },
               {
@@ -496,7 +550,7 @@ export function ResultsPage() {
                   <p className="font-semibold text-[var(--foreground)] text-sm">{t.label}</p>
                   <p className="text-xs text-[var(--muted-foreground)] mt-0.5 flex items-center gap-1">
                     <ClockIcon size={10} />
-                    {new Date(analysis.createdAt).toLocaleString()}
+                    {new Date(report.createdAt).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -505,17 +559,21 @@ export function ResultsPage() {
         </Card>
       )}
 
-      <Modal open={shareModal} onClose={() => setShareModal(false)} title="Share Analysis">
+      <Modal open={shareModal} onClose={() => setShareModal(false)} title="Share Report">
         <div className="space-y-4">
-          <Alert variant="info">
-            Public sharing links aren't available yet — this is planned for a future release.
-          </Alert>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Anyone with this link can view this report's risk score, flags, and recommendations — no
+            account needed.
+          </p>
           <div className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border)] bg-[var(--muted)]">
-            <CopyIcon size={14} className="text-[var(--muted-foreground)]" />
-            <span className="text-sm text-[var(--muted-foreground)]">
-              Only you can view this analysis right now.
+            <span className="flex-1 text-sm text-[var(--foreground)] font-mono truncate">
+              {shareUrl}
             </span>
+            <Button size="sm" icon={<CopyIcon size={14} />} onClick={handleCopyLink}>
+              {linkCopied ? 'Copied!' : 'Copy link'}
+            </Button>
           </div>
+          {linkCopied && <Alert variant="success">Report link copied</Alert>}
         </div>
       </Modal>
     </div>

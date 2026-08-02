@@ -1,6 +1,10 @@
 import { apiRequest, ApiClientError } from '@/lib/apiClient';
 import { env } from '@/config/env';
-import type { AnalysisHistoryResult, AnalysisWithStatus } from '@/features/analysis/types';
+import type {
+  AnalysisHistoryResult,
+  AnalysisWithStatus,
+  PublicReport,
+} from '@/features/analysis/types';
 
 // Must not exceed the backend's listAnalysesQuerySchema max (analysis.validation.ts) —
 // requesting more than that returns a 400, which callers sampling for client-side
@@ -56,4 +60,10 @@ export function getAnalysisById(id: string): Promise<AnalysisWithStatus> {
 
 export function getAnalysisHistory(page = 1, limit = 20): Promise<AnalysisHistoryResult> {
   return apiRequest<AnalysisHistoryResult>(`/analyses?page=${page}&limit=${limit}`);
+}
+
+// "Share Report" link target — fully public, no auth required, works for any
+// analysis id (guest or an authenticated user's own).
+export function getPublicReport(id: string): Promise<{ report: PublicReport }> {
+  return apiRequest<{ report: PublicReport }>(`/reports/${id}`);
 }

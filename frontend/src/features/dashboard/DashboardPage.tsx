@@ -21,6 +21,7 @@ import {
 import type { RiskLevel as UiRiskLevel } from '@/components/ui';
 import { MAX_HISTORY_PAGE_SIZE, getAnalysisHistory } from '@/features/analysis/api/analysis.api';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useGoToAnalyzer } from '@/hooks/useGoToAnalyzer';
 
 const STATS_SAMPLE_SIZE = MAX_HISTORY_PAGE_SIZE;
 
@@ -39,6 +40,7 @@ function relativeTime(iso: string): string {
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const goToAnalyzer = useGoToAnalyzer();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['analyses', 'dashboard'],
@@ -180,11 +182,7 @@ export function DashboardPage() {
                 title="No analyses yet"
                 description="Paste a job posting to run your first scam-risk check."
                 action={
-                  <Button
-                    size="sm"
-                    icon={<ZapIcon size={14} />}
-                    onClick={() => navigate('/analyze')}
-                  >
+                  <Button size="sm" icon={<ZapIcon size={14} />} onClick={() => goToAnalyzer()}>
                     Analyze a job
                   </Button>
                 }
@@ -254,7 +252,7 @@ export function DashboardPage() {
                 variant="secondary"
                 size="sm"
                 className="w-full"
-                onClick={() => navigate('/analyze')}
+                onClick={() => goToAnalyzer()}
                 icon={<ZapIcon size={14} />}
               >
                 Analyze a new job posting

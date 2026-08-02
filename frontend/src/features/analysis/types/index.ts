@@ -54,3 +54,20 @@ export interface AnalysisHistoryResult {
   total: number;
   totalPages: number;
 }
+
+// Redacted shape returned by GET /reports/:id — the "Share Report" link.
+// No rawJobText/normalizedText/contactEmail/contactPhone/userId — see
+// backend analysis.service.ts::getPublicReport for why.
+export interface PublicReport {
+  id: string;
+  riskScore: number;
+  riskLevel: RiskLevel;
+  redFlags: RedFlag[];
+  greenFlags: GreenFlag[];
+  aiExplanation: string | null;
+  aiConfidence: number | null;
+  engineVersion: string;
+  createdAt: string;
+  jobTitle: string | null;
+  companyName: string | null;
+}

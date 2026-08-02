@@ -179,6 +179,48 @@ export async function getAnalysisById(
   return { analysis, status: deriveStatus(analysis) };
 }
 
+// Redacted, always-public view for the "Share Report" link — works for ANY
+// analysis id (guest or an authenticated user's own), unlike getAnalysisById
+// above which stays ownership-checked for owned records. Deliberately a
+// narrower field set than IJobAnalysis: no rawJobText/normalizedText (the
+// actual submitted text may contain personal info), no contactEmail/
+// contactPhone, no userId/companyId/sourceMetadata. Same collection, same
+// analysisRepository — not a second analysis pipeline, just a stricter DTO.
+export interface PublicReportDTO {
+  id: string;
+  riskScore: number;
+  riskLevel: RiskLevel;
+  redFlags: IRedFlag[];
+  greenFlags: IJobAnalysis['greenFlags'];
+  aiExplanation: string | null;
+  aiConfidence: number | null;
+  engineVersion: string;
+  createdAt: Date;
+  jobTitle: string | null;
+  companyName: string | null;
+}
+
+export async function getPublicReport(analysisId: string): Promise<PublicReportDTO> {
+  const analysis = await analysisRepository.findAnalysisById(analysisId);
+  if (!analysis) {
+    throw new ApiError(404, 'Report not found');
+  }
+
+  return {
+    id: (analysis._id as Types.ObjectId).toString(),
+    riskScore: analysis.riskScore,
+    riskLevel: analysis.riskLevel,
+    redFlags: analysis.redFlags,
+    greenFlags: analysis.greenFlags,
+    aiExplanation: analysis.aiExplanation,
+    aiConfidence: analysis.aiConfidence,
+    engineVersion: analysis.engineVersion,
+    createdAt: analysis.createdAt,
+    jobTitle: analysis.extractedFields.jobTitle,
+    companyName: analysis.extractedFields.companyName,
+  };
+}
+
 export async function getAnalysisHistory(
   userId: string,
   page: number,

@@ -10,7 +10,13 @@ import {
   analysisIdParamSchema,
   publicAnalysisBodySchema,
 } from '@/modules/analysis/analysis.validation';
-import { create, analyzePublic, getById, getHistory } from '@/modules/analysis/analysis.controller';
+import {
+  create,
+  analyzePublic,
+  getById,
+  getPublicReport,
+  getHistory,
+} from '@/modules/analysis/analysis.controller';
 
 export const analysisRouter = Router();
 
@@ -39,3 +45,8 @@ analysisRouter.post(
   validate(publicAnalysisBodySchema),
   analyzePublic,
 );
+
+// Fully public "Share Report" link — no auth at all, works for ANY analysis
+// id (guest or an authenticated user's own). Returns a redacted DTO (see
+// getPublicReport), never the full document /analyses/:id returns.
+analysisRouter.get('/reports/:id', validate(analysisIdParamSchema, 'params'), getPublicReport);

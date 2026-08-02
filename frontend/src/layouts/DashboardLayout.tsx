@@ -20,6 +20,7 @@ import {
 } from '@/components/ui';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useDarkMode } from '@/hooks/useDarkMode';
+import { useGoToAnalyzer } from '@/hooks/useGoToAnalyzer';
 
 interface NavItem {
   to: string;
@@ -45,6 +46,7 @@ export function DashboardLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const goToAnalyzer = useGoToAnalyzer();
   const [dark, toggleDark] = useDarkMode();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -174,7 +176,7 @@ export function DashboardLayout() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate('/analyze')}
+              onClick={() => goToAnalyzer()}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--primary)] text-white text-sm font-semibold hover:brightness-110 transition-all"
             >
               <ZapIcon size={13} />

@@ -99,6 +99,12 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, 200, result);
 });
 
+// Fully public — no auth, no ownership check. Backs the "Share Report" link.
+export const getPublicReport = asyncHandler(async (req: Request, res: Response) => {
+  const report = await analysisService.getPublicReport(req.params.id!);
+  sendSuccess(res, 200, { report });
+});
+
 export const getHistory = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit } = req.query as unknown as ListAnalysesQuery;
   const result = await analysisService.getAnalysisHistory(req.user!.userId, page, limit);
