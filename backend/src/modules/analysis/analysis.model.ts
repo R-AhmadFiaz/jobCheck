@@ -23,6 +23,19 @@ export interface IGreenFlag {
   description: string;
 }
 
+// Populated only for anonymous/public submissions (analysis.service.ts
+// createPublicAnalysis) — records how the combined text was assembled, since
+// rawJobText alone no longer shows which of url/description/file contributed.
+export interface ISourceMetadata {
+  url: string | null;
+  hasDescription: boolean;
+  fileName: string | null;
+  // Non-null only when a url was submitted and fetching/extracting its content
+  // failed — the analysis still ran on whatever other input was available.
+  // See engine/urlContentExtractor.ts.
+  urlExtractionError: string | null;
+}
+
 export interface IJobAnalysis extends Document {
   userId: Types.ObjectId | null;
   rawJobText: string;
@@ -37,6 +50,7 @@ export interface IJobAnalysis extends Document {
   aiConfidence: number | null;
   engineVersion: string;
   isSaved: boolean;
+  sourceMetadata: ISourceMetadata | null;
   createdAt: Date;
 }
 
@@ -68,6 +82,16 @@ const greenFlagSchema = new Schema<IGreenFlag>(
   {
     label: { type: String, required: true, trim: true },
     description: { type: String, required: true, trim: true },
+  },
+  { _id: false },
+);
+
+const sourceMetadataSchema = new Schema<ISourceMetadata>(
+  {
+    url: { type: String, default: null, trim: true },
+    hasDescription: { type: Boolean, default: false },
+    fileName: { type: String, default: null, trim: true },
+    urlExtractionError: { type: String, default: null },
   },
   { _id: false },
 );
@@ -132,6 +156,10 @@ const jobAnalysisSchema = new Schema<IJobAnalysis>(
     isSaved: {
       type: Boolean,
       default: false,
+    },
+    sourceMetadata: {
+      type: sourceMetadataSchema,
+      default: null,
     },
   },
   {

@@ -9,6 +9,7 @@ import { adminRouter } from '@/modules/admin/admin.routes';
 import { analysisRouter } from '@/modules/analysis/analysis.routes';
 import { authRouter } from '@/modules/auth/auth.routes';
 import { healthRouter } from '@/modules/health/health.routes';
+import { knowledgeBaseRouter } from '@/modules/knowledgeBase/knowledgeBase.routes';
 import { errorHandler } from '@/shared/middlewares/errorHandler.middleware';
 import { notFoundHandler } from '@/shared/middlewares/notFound.middleware';
 import { logger } from '@/shared/utils/logger';
@@ -31,6 +32,7 @@ export function createApp(): Application {
   app.use(API_PREFIX, authRouter);
   app.use(API_PREFIX, analysisRouter);
   app.use(API_PREFIX, adminRouter);
+  app.use(API_PREFIX, knowledgeBaseRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

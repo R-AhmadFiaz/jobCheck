@@ -10,6 +10,19 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  PUBLIC_ANALYSIS_MAX_FILE_SIZE_MB: z.coerce.number().positive().default(5),
+  PUBLIC_ANALYSIS_RATE_LIMIT_WINDOW_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15 * 60 * 1000),
+  PUBLIC_ANALYSIS_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  URL_EXTRACTION_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
+  URL_EXTRACTION_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(2 * 1024 * 1024),
 });
 
 const parsed = envSchema.safeParse(process.env);

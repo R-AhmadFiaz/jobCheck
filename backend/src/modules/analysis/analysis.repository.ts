@@ -2,7 +2,7 @@ import type { Types } from 'mongoose';
 import { JobAnalysis, type IJobAnalysis } from '@/modules/analysis/analysis.model';
 
 export interface CreateAnalysisData {
-  userId: Types.ObjectId;
+  userId: Types.ObjectId | null;
   rawJobText: string;
   normalizedText: string;
   extractedFields: IJobAnalysis['extractedFields'];
@@ -12,6 +12,7 @@ export interface CreateAnalysisData {
   greenFlags: IJobAnalysis['greenFlags'];
   engineVersion: string;
   isSaved: boolean;
+  sourceMetadata?: IJobAnalysis['sourceMetadata'];
 }
 
 export function createAnalysis(data: CreateAnalysisData): Promise<IJobAnalysis> {

@@ -1,0 +1,523 @@
+import { useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import {
+  Card,
+  Badge,
+  Button,
+  Alert,
+  Modal,
+  RiskBadge,
+  Tabs,
+  Skeleton,
+  ShieldCheckIcon,
+  AlertTriangleIcon,
+  CheckCircleIcon,
+  CopyIcon,
+  DownloadIcon,
+  BookmarkIcon,
+  ShareIcon,
+  InfoIcon,
+  ChevronDownIcon,
+  ZapIcon,
+  ClockIcon,
+  SearchIcon,
+} from '@/components/ui';
+import type { RiskLevel as UiRiskLevel } from '@/components/ui';
+import { getAnalysisById } from '@/features/analysis/api/analysis.api';
+import { parseRedFlagDescription } from '@/features/analysis/parseRedFlag';
+import type { RiskLevel } from '@/features/analysis/types';
+import { useAuth } from '@/features/auth/AuthContext';
+
+function toUiRiskLevel(level: RiskLevel, score: number): UiRiskLevel {
+  if (level === 'low' && score < 10) return 'safe';
+  return level;
+}
+
+function humanizeLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+const severityWeight: Record<'low' | 'medium' | 'high', number> = { low: 1, medium: 2, high: 3 };
+
+export function ResultsPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [tab, setTab] = useState('overview');
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [shareModal, setShareModal] = useState(false);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['analysis', id],
+    queryFn: () => getAnalysisById(id!),
+    enabled: Boolean(id),
+  });
+
+  const parsedFlags = useMemo(
+    () =>
+      (data?.analysis.redFlags ?? [])
+        .map((flag) => ({ flag, parsed: parseRedFlagDescription(flag.description) }))
+        .sort((a, b) => severityWeight[b.flag.severity] - severityWeight[a.flag.severity]),
+    [data],
+  );
+
+  const severityCounts = useMemo(() => {
+    const counts = { high: 0, medium: 0, low: 0 };
+    for (const { flag } of parsedFlags) counts[flag.severity]++;
+    return counts;
+  }, [parsedFlags]);
+
+  const uniqueRecommendations = useMemo(() => {
+    const seen = new Set<string>();
+    const results: { recommendation: string; severity: 'low' | 'medium' | 'high' }[] = [];
+    for (const { flag, parsed } of parsedFlags) {
+      if (parsed.recommendation && !seen.has(parsed.recommendation)) {
+        seen.add(parsed.recommendation);
+        results.push({ recommendation: parsed.recommendation, severity: flag.severity });
+      }
+    }
+    return results;
+  }, [parsedFlags]);
+
+  if (isLoading) {
+    return (
+      <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="p-6 md:p-8 max-w-6xl mx-auto">
+        <Alert variant="error" title="Couldn't load this analysis">
+          It may not exist, or you may not have access to it.
+        </Alert>
+      </div>
+    );
+  }
+
+  const { analysis } = data;
+  const score = analysis.riskScore;
+  const uiRiskLevel = toUiRiskLevel(analysis.riskLevel, score);
+  const dashOffset = 283 - (283 * score) / 100;
+  const title = analysis.extractedFields.jobTitle ?? 'Job posting analysis';
+  const company = analysis.extractedFields.companyName ?? 'Unknown company';
+
+  return (
+    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-up">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <RiskBadge level={uiRiskLevel} />
+            <span className="text-xs text-[var(--muted-foreground)]">
+              Analyzed {new Date(analysis.createdAt).toLocaleString()}
+            </span>
+          </div>
+          <h1
+            className="text-2xl font-extrabold text-[var(--foreground)]"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            {title}
+          </h1>
+          <p className="text-sm text-[var(--muted-foreground)] mt-0.5">{company}</p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button variant="outline" size="sm" icon={<BookmarkIcon size={14} />} disabled>
+            Saved
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<ShareIcon size={14} />}
+            onClick={() => setShareModal(true)}
+          >
+            Share
+          </Button>
+          <Button variant="outline" size="sm" icon={<DownloadIcon size={14} />} disabled>
+            Export PDF
+          </Button>
+          <Button
+            size="sm"
+            icon={<ZapIcon size={14} />}
+            // Guests reach this page with no session at all (public /results/:id
+            // route) — /analyze is behind ProtectedRoute and would bounce them
+            // to /login. Send guests back to the homepage analyzer instead;
+            // logged-in users keep going straight to the authenticated page.
+            onClick={() => navigate(user ? '/analyze' : '/')}
+          >
+            New scan
+          </Button>
+        </div>
+      </div>
+
+      <Tabs
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { id: 'overview', label: 'Overview' },
+          { id: 'indicators', label: `Indicators (${parsedFlags.length})` },
+          { id: 'recommendations', label: 'Recommendations' },
+          { id: 'timeline', label: 'Timeline' },
+        ]}
+        className="animate-fade-up stagger-1"
+      />
+
+      {tab === 'overview' && (
+        <div className="grid lg:grid-cols-3 gap-6 animate-fade-in">
+          <Card className="flex flex-col items-center text-center gap-4 lg:col-span-1">
+            <div className="relative w-44 h-44">
+              <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+                <circle cx="60" cy="60" r="45" fill="none" stroke="var(--muted)" strokeWidth="10" />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="45"
+                  fill="none"
+                  stroke="url(#scoreGrad)"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray="283"
+                  strokeDashoffset={dashOffset}
+                  style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                />
+                <defs>
+                  <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#F59E0B" />
+                    <stop offset="100%" stopColor="#EF4444" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span
+                  className="text-5xl font-extrabold text-[var(--foreground)]"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  {score}
+                </span>
+                <span className="text-sm text-[var(--muted-foreground)] font-medium">
+                  risk score
+                </span>
+              </div>
+            </div>
+            <div>
+              <RiskBadge level={uiRiskLevel} />
+              <p className="text-sm text-[var(--muted-foreground)] mt-2 leading-relaxed">
+                {analysis.riskLevel === 'critical' || analysis.riskLevel === 'high' ? (
+                  <>
+                    This posting shows strong indicators of fraud. We recommend{' '}
+                    <strong>not applying</strong>.
+                  </>
+                ) : analysis.riskLevel === 'medium' ? (
+                  'This posting shows some signals worth reviewing before applying.'
+                ) : (
+                  'No strong fraud signals were detected in this posting.'
+                )}
+              </p>
+            </div>
+            <div className="w-full">
+              <div className="relative h-3 rounded-full overflow-hidden risk-gradient mb-2">
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-white/80 shadow-sm transition-all duration-700"
+                  style={{ left: `${score}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-[var(--muted-foreground)]">
+                <span>Safe</span>
+                <span>Critical</span>
+              </div>
+            </div>
+          </Card>
+
+          <div className="lg:col-span-2 space-y-4">
+            {parsedFlags.length > 0 ? (
+              <Alert
+                variant={
+                  analysis.riskLevel === 'critical' || analysis.riskLevel === 'high'
+                    ? 'error'
+                    : 'warning'
+                }
+                title={
+                  analysis.riskLevel === 'critical' || analysis.riskLevel === 'high'
+                    ? 'Proceed with caution'
+                    : 'A few things to review'
+                }
+              >
+                We detected {parsedFlags.length} fraud signal{parsedFlags.length === 1 ? '' : 's'}{' '}
+                in this posting.
+              </Alert>
+            ) : (
+              <Alert variant="success" title="No red flags detected">
+                None of our active detection rules matched this posting. Still use your own judgment
+                before applying.
+              </Alert>
+            )}
+
+            <Card>
+              <h3 className="font-bold text-[var(--foreground)] mb-4">Signal Breakdown</h3>
+              <div className="space-y-3">
+                {[
+                  { label: 'High signals', count: severityCounts.high, bar: 'bg-orange-500' },
+                  { label: 'Medium signals', count: severityCounts.medium, bar: 'bg-amber-500' },
+                  { label: 'Low signals', count: severityCounts.low, bar: 'bg-blue-500' },
+                ].map((s) => (
+                  <div key={s.label} className="flex items-center gap-3">
+                    <span className="w-28 text-sm text-[var(--muted-foreground)]">{s.label}</span>
+                    <div className="flex-1 h-2 rounded-full bg-[var(--muted)] overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${s.bar}`}
+                        style={{
+                          width: `${parsedFlags.length ? (s.count / parsedFlags.length) * 100 : 0}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="w-4 text-sm font-semibold text-[var(--foreground)] text-right">
+                      {s.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {parsedFlags.length > 0 && (
+              <Card>
+                <h3 className="font-bold text-[var(--foreground)] mb-4">Key Red Flags</h3>
+                <div className="space-y-2.5">
+                  {parsedFlags.slice(0, 4).map(({ flag, parsed }, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      {flag.severity === 'high' ? (
+                        <AlertTriangleIcon
+                          size={16}
+                          className="text-orange-500 flex-shrink-0 mt-0.5"
+                        />
+                      ) : flag.severity === 'medium' ? (
+                        <InfoIcon size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                      ) : (
+                        <InfoIcon size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <p className="text-sm font-medium text-[var(--foreground)]">
+                          {humanizeLabel(flag.label)}
+                        </p>
+                        {parsed.evidence && (
+                          <p className="text-xs text-[var(--muted-foreground)] mt-0.5 italic">
+                            Evidence: {parsed.evidence}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {parsedFlags.length > 4 && (
+                  <button
+                    onClick={() => setTab('indicators')}
+                    className="mt-4 text-sm font-semibold text-[var(--primary)] hover:underline flex items-center gap-1"
+                  >
+                    View all {parsedFlags.length} indicators
+                  </button>
+                )}
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'indicators' && (
+        <div className="space-y-3 animate-fade-in">
+          {parsedFlags.length === 0 ? (
+            <Alert variant="success">No fraud signals were detected in this posting.</Alert>
+          ) : (
+            <>
+              <p className="text-sm text-[var(--muted-foreground)]">
+                {parsedFlags.length} fraud signal{parsedFlags.length === 1 ? '' : 's'} detected ·
+                Click each to expand evidence
+              </p>
+              {parsedFlags.map(({ flag, parsed }, i) => {
+                const open = expandedIndex === i;
+                const sev =
+                  flag.severity === 'high'
+                    ? {
+                        color: 'text-orange-600',
+                        bg: 'bg-orange-50 dark:bg-orange-950/30',
+                        border: 'border-orange-200 dark:border-orange-900',
+                        badge: 'danger' as const,
+                      }
+                    : flag.severity === 'medium'
+                      ? {
+                          color: 'text-amber-600',
+                          bg: 'bg-amber-50 dark:bg-amber-950/30',
+                          border: 'border-amber-200 dark:border-amber-900',
+                          badge: 'warning' as const,
+                        }
+                      : {
+                          color: 'text-blue-600',
+                          bg: 'bg-blue-50 dark:bg-blue-950/30',
+                          border: 'border-blue-200 dark:border-blue-900',
+                          badge: 'info' as const,
+                        };
+                return (
+                  <div
+                    key={i}
+                    className={`rounded-2xl border ${sev.border} ${sev.bg} overflow-hidden`}
+                  >
+                    <button
+                      onClick={() => setExpandedIndex(open ? null : i)}
+                      className="w-full flex items-center gap-4 px-5 py-4 text-left"
+                    >
+                      <div className={`flex-shrink-0 ${sev.color}`}>
+                        {flag.severity === 'high' ? (
+                          <AlertTriangleIcon size={20} />
+                        ) : (
+                          <InfoIcon size={20} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-[var(--foreground)]">
+                            {humanizeLabel(flag.label)}
+                          </span>
+                          <Badge variant={sev.badge}>{flag.severity}</Badge>
+                          {parsed.category && (
+                            <span className="text-xs text-[var(--muted-foreground)]">
+                              {parsed.category}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <ChevronDownIcon
+                        size={16}
+                        className={`flex-shrink-0 text-[var(--muted-foreground)] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                    {open && (
+                      <div className="px-5 pb-5 border-t border-current/10 space-y-3 animate-fade-in">
+                        <p className="text-sm text-[var(--foreground)] leading-relaxed">
+                          {parsed.summary}
+                        </p>
+                        {parsed.evidence && (
+                          <div className="rounded-xl bg-[var(--card)] border border-[var(--border)] p-3">
+                            <p className="text-xs text-[var(--muted-foreground)] font-semibold mb-1">
+                              Evidence from posting:
+                            </p>
+                            <p className="text-sm font-mono text-[var(--foreground)] italic">
+                              {parsed.evidence}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === 'recommendations' && (
+        <div className="space-y-4 animate-fade-in">
+          {uniqueRecommendations.length === 0 ? (
+            <Alert variant="success">
+              No specific recommendations — no red flags were detected.
+            </Alert>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4">
+              {uniqueRecommendations.map((r, i) => (
+                <Card key={i} hover>
+                  <Badge
+                    variant={
+                      r.severity === 'high'
+                        ? 'danger'
+                        : r.severity === 'medium'
+                          ? 'warning'
+                          : 'info'
+                    }
+                    className="mb-3"
+                  >
+                    {r.severity} priority
+                  </Badge>
+                  <p className="text-sm text-[var(--foreground)] leading-relaxed">
+                    {r.recommendation}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          <Card className="border-[var(--primary)] gradient-border">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-[var(--secondary)] flex items-center justify-center flex-shrink-0">
+                <ShieldCheckIcon size={18} className="text-[var(--primary)]" />
+              </div>
+              <div>
+                <h3 className="font-bold text-[var(--foreground)] mb-1">
+                  Find legitimate opportunities
+                </h3>
+                <p className="text-sm text-[var(--muted-foreground)] mb-3">
+                  Browse the Knowledge Base to research companies and recruiters before applying.
+                </p>
+                <Button size="sm" variant="secondary" onClick={() => navigate('/knowledge-base')}>
+                  Browse Knowledge Base
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {tab === 'timeline' && (
+        <Card className="animate-fade-in">
+          <h3 className="font-bold text-[var(--foreground)] mb-6">Analysis Timeline</h3>
+          <div className="relative pl-8 space-y-8">
+            <div className="absolute left-3 top-2 bottom-2 w-px bg-[var(--border)]" />
+            {[
+              { label: 'Job posting submitted', icon: <SearchIcon size={14} /> },
+              {
+                label: `Rule evaluation completed (${analysis.engineVersion})`,
+                icon: <ZapIcon size={14} />,
+              },
+              {
+                label: `Risk score calculated: ${score} / 100`,
+                icon: <ShieldCheckIcon size={14} />,
+              },
+              { label: 'Report ready', icon: <CheckCircleIcon size={14} /> },
+            ].map((t, i) => (
+              <div key={i} className="relative">
+                <div className="absolute -left-5 w-4 h-4 rounded-full bg-[var(--primary)] border-2 border-[var(--card)] flex items-center justify-center">
+                  <span className="text-white scale-75">{t.icon}</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-[var(--foreground)] text-sm">{t.label}</p>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-0.5 flex items-center gap-1">
+                    <ClockIcon size={10} />
+                    {new Date(analysis.createdAt).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Modal open={shareModal} onClose={() => setShareModal(false)} title="Share Analysis">
+        <div className="space-y-4">
+          <Alert variant="info">
+            Public sharing links aren't available yet — this is planned for a future release.
+          </Alert>
+          <div className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border)] bg-[var(--muted)]">
+            <CopyIcon size={14} className="text-[var(--muted-foreground)]" />
+            <span className="text-sm text-[var(--muted-foreground)]">
+              Only you can view this analysis right now.
+            </span>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}

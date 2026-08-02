@@ -1,0 +1,10 @@
+{
+  "description": "AI-powered platform analyzes job postings to detect scams, providing detailed risk assessments and recommendations for job seekers and freelancers.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

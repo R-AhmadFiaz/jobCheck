@@ -294,6 +294,7 @@ A separate collection (rather than an array on `User`) so multi-device sessions 
 | `aiConfidence` | number \| null | 0–1 |
 | `engineVersion` | string | which rule-set/logic version produced this result — keeps old results reproducible/explainable after the engine evolves |
 | `isSaved` | boolean | explicit save vs. throwaway run |
+| `sourceMetadata` | `{ url, hasDescription, fileName, urlExtractionError } \| null` | **Added** (guest public-analysis phase, §6). Records which of url/description/file contributed to `rawJobText` for a guest submission, and whether fetching the url's page content failed (`urlExtractionError`, see `engine/urlContentExtractor.ts`); `null` for every authenticated-flow analysis. |
 | `createdAt` | Date | |
 
 ### `Company`
@@ -374,12 +375,17 @@ DELETE /api/v1/users/me          # deactivate, not hard delete
 
 ### Analysis
 ```
-POST   /api/v1/analyses           # run analysis — works for guest (rate-limited, not persisted) or user (persisted)
+POST   /api/v1/analyses           # run analysis — authenticated only, JSON body (jobText)
+POST   /api/v1/analyze/public      # run analysis — guest, multipart (url/description/file), rate-limited
 GET    /api/v1/analyses           # list current user's saved analyses (paginated)
-GET    /api/v1/analyses/:id
+GET    /api/v1/analyses/:id        # optional auth — owner/admin, or anyone if the analysis is a guest run (userId: null)
 PATCH  /api/v1/analyses/:id       # toggle isSaved, add notes
 DELETE /api/v1/analyses/:id
 ```
+
+**Deviation from the original plan above:** this section originally called for one unified `POST /analyses` serving both guest and authenticated requests. Guest support was instead built as a **separate** `POST /analyze/public` endpoint, because it needed a fundamentally different request format — `multipart/form-data` to carry an optional file upload alongside `url`/`description` — while the authenticated route stays JSON-only and completely unchanged. Both routes funnel into the same `evaluateJobText` step inside `analysis.service.ts` (normalize → rule engine → scoring), so the rule engine, scoring curve, and `JobAnalysis` collection are still shared, not duplicated. Guest runs *are* persisted (`userId: null`, `isSaved: false`) rather than the "typically not persisted" default assumed above, so a guest can revisit their own result at `GET /analyses/:id` immediately after submitting — access to that route is public for exactly those userId-less records, and unchanged (owner/admin only) for every other analysis. Guest submissions additionally combine `url` + `description` + extracted file text into one `rawJobText`, recording which sources contributed in a new additive `sourceMetadata` field on `JobAnalysis` (not present in §5's original field table).
+
+**URL extraction (added after the guest-flow phase):** a submitted `url` is no longer analyzed as a bare string. `analysis.controller.ts::analyzePublic` calls `engine/urlContentExtractor.ts` — a pipeline stage that sits alongside `textNormalizer.ts`/`ruleEngine.ts`/`scoring.ts`, not a second analyzer — which fetches the page (http/https only, SSRF-guarded: literal-IP and resolved-DNS private-range checks, re-validated on every redirect hop, capped response size, request timeout) and parses it with `cheerio` into `{ title, extractedText }`, stripping scripts/styles/nav/header/footer/comments. That extracted text replaces the raw URL as the "url segment" combined into `rawJobText`; `evaluateJobText` (§8) is unchanged and never sees a URL string. If extraction fails for any reason (blocked, timeout, non-HTML, unreachable, private-network target), the analysis still runs on whatever other input was given, and the reason is recorded in `sourceMetadata.urlExtractionError` rather than silently producing a shallow result.
 
 ### Companies (public read)
 ```
@@ -605,6 +611,14 @@ This is the collection search queries actually hit. It's a **denormalized, cache
 | `safetyRecommendations` | string[] \| null | via existing `IAIProvider` |
 | `lastActivityAt` | Date | most recent linked analysis/report — drives "recent activity" and score decay (§12.5) |
 | `recomputedAt` | Date | |
+| `name` | string | **Added — Knowledge Base backend phase.** Denormalized display name copied from the linked `Company`/`Recruiter`/`Identifier` at create time, so reads never need a cross-collection lookup. |
+| `description` | string | **Added.** Plain admin-authored summary. The real pipeline still writes `aiSummary` once `IAIProvider` exists (§12.3) — this field exists because that phase explicitly excluded AI, and entries need *some* summary text now. |
+| `indicators` | string[] | **Added.** Plain admin-authored red-flag list. `commonPatterns` remains the field a real rule-aggregation pipeline populates later; `indicators` is the simpler, directly-authored version used until that pipeline exists. |
+| `domain` / `associatedCompany` | string \| null | **Added.** Denormalized display fields (a company's site / a recruiter's claimed employer) — same rationale as `name`. |
+| `communityReports` | array of `{ category, description, reportedAt }` | **Added, explicitly a placeholder.** Illustrative report content authored directly on the entry. This is *not* the real Community Reports system — `FraudReport`/`ReportVote`/`ReporterReputation` are untouched and still the intended real path; once that's built, this field is what gets replaced by a real aggregation over `FraudReport`. |
+| `createdAt` / `updatedAt` | Date | **Added** (`timestamps: true`). The original design treated this collection as a pure recompute cache with no need for these; this phase adds direct admin-authored CRUD (`POST`/`PATCH /knowledge-base`), which is a genuinely different write pattern where standard timestamps are the right fit — same rationale `ScamRule`/`Company` already use. |
+
+The API-facing shape (`GET /knowledge-base/*`) translates two of the fields above at the boundary rather than storing a second taxonomy: `riskLevel` (`low/medium/high/critical`, kept `JobAnalysis`-consistent for whenever the real recompute pipeline lands) maps to the frontend's `safe/suspicious/high_risk/confirmed_scam`, and `entityType: 'identifier'` maps to the frontend's `type: 'domain'` (the only `Identifier.type` this phase creates). Both mappings live in `knowledgeBase.service.ts`; nothing stored on disk uses the frontend's vocabulary.
 
 ### 12.3 Data Relationships
 
