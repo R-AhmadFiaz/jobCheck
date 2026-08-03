@@ -38,6 +38,11 @@ export function errorHandler(
     success: false,
     error: {
       message,
+      // Additive, optional structured data (e.g. { documentType,
+      // documentTypeConfidence } from the AI document-classification gate)
+      // — only present when the specific ApiError carried it; every other
+      // error response is completely unchanged.
+      ...(isApiError && err.isOperational && err.details ? err.details : {}),
       ...(env.isDevelopment && !isApiError ? { stack: err.stack } : {}),
     },
   });

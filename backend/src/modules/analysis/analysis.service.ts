@@ -7,6 +7,7 @@ import { ApiError } from '@/shared/utils/ApiError';
 import { normalizeJobPosting } from '@/modules/analysis/engine/textNormalizer';
 import { validateJobContent } from '@/modules/analysis/engine/jobContentValidator';
 import { evaluateActiveRules, ENGINE_VERSION } from '@/modules/analysis/engine/ruleEngine';
+import { applyRuleCorrelations } from '@/modules/analysis/engine/correlationEngine';
 import { computeRiskScore, computeRiskLevel } from '@/modules/analysis/engine/scoring';
 import type { RiskLevel } from '@/shared/types/riskLevel';
 import { env } from '@/config/env';
@@ -18,6 +19,11 @@ import {
   generateExplanation,
   formatExplanationForStorage,
 } from '@/modules/analysis/engine/ai/gemini.service';
+import { getAIProvider } from '@/modules/analysis/ai/aiProviderFactory';
+import { AIProviderError } from '@/modules/analysis/ai/interfaces/IAIProvider';
+import type { AIProviderAnalysisResult } from '@/modules/analysis/ai/interfaces/IAIProvider';
+import { mergeAIFindings } from '@/modules/analysis/ai/aiResultMerger';
+import { evaluateDocumentClassification } from '@/modules/analysis/ai/documentClassification';
 
 // Sentinel a record would carry if it were ever persisted before evaluation.
 // Kept only so `deriveStatus` stays meaningful for any such record; every
@@ -51,15 +57,104 @@ interface EvaluatedPosting {
   riskLevel: RiskLevel;
 }
 
-// Shared by both the authenticated and public flows (§8: normalize → evaluate
-// rules → score) — the one rule-engine pipeline every submission source funnels
-// into, so there is exactly one place that decides what a risk score means.
-async function evaluateJobText(rawText: string): Promise<EvaluatedPosting> {
+interface DeterministicEvaluation {
+  normalizedText: string;
+  extractedFields: IExtractedFields;
+  redFlags: IRedFlag[];
+  totalWeight: number;
+}
+
+// Shared by both the authenticated and public flows (§8: normalize →
+// evaluate rules → correlate) — the one rule-engine pipeline every
+// submission source funnels into, so there is exactly one place that
+// decides what a red flag is. Unchanged by Phase 7's AI integration: this
+// function has no idea AI exists. Scoring itself now happens one level up,
+// in runAnalysisPipeline, AFTER the AI merge step below has had a chance to
+// run — see mergeAIFindings in ai/aiResultMerger.ts.
+async function evaluateDeterministic(rawText: string): Promise<DeterministicEvaluation> {
   const { normalizedText, extractedFields } = normalizeJobPosting(rawText);
-  const { redFlags, totalWeight } = await evaluateActiveRules(normalizedText, extractedFields);
-  const riskScore = computeRiskScore(totalWeight);
-  const riskLevel = computeRiskLevel(riskScore);
-  return { normalizedText, extractedFields, redFlags, riskScore, riskLevel };
+  const { redFlags, totalWeight, ruleConfidence } = await evaluateActiveRules(
+    normalizedText,
+    extractedFields,
+  );
+
+  // Correlation layer (Phase 6): runs strictly after the rule engine above
+  // and only consumes its output — evaluateActiveRules() itself is
+  // completely unchanged and unaware this exists. Purely additive: extra
+  // flags/weight on top of what was already matched, never a replacement.
+  const { correlationFlags, additionalWeight } = applyRuleCorrelations(redFlags);
+  const allRedFlags = [...redFlags, ...correlationFlags];
+  const combinedWeight = totalWeight + additionalWeight;
+
+  // Dev-only: the rule engine now computes an internal per-flag confidence
+  // (evidence count/strength — see ruleEngine.ts's computeMatchConfidence).
+  // Not persisted and not part of the API response yet — surfaced here only
+  // so it's observable while the engine is prepared for future use.
+  if (env.isDevelopment && Object.keys(ruleConfidence).length > 0) {
+    logger.debug({ ruleConfidence }, 'Rule engine: internal per-flag confidence');
+  }
+  if (env.isDevelopment && correlationFlags.length > 0) {
+    logger.debug(
+      { correlations: correlationFlags.map((f) => f.label), additionalWeight },
+      'Correlation layer: applied',
+    );
+  }
+
+  return { normalizedText, extractedFields, redFlags: allRedFlags, totalWeight: combinedWeight };
+}
+
+/**
+ * Calls the configured AI provider (Groq today, via IAIProvider — never
+ * imported concretely from this file, see ai/aiProviderFactory.ts) to
+ * analyze the raw text. Never throws: AI_ENABLED=false, no provider
+ * configured, a missing API key, a timeout, and an invalid response all
+ * resolve to `null` here, so the caller always has a safe "AI unavailable"
+ * value to hand to mergeAIFindings — the deterministic pipeline never
+ * blocks on, or breaks because of, this call.
+ */
+async function runAIAnalysis(rawText: string): Promise<AIProviderAnalysisResult | null> {
+  const provider = getAIProvider();
+  if (!provider || !provider.isConfigured()) {
+    if (env.isDevelopment) {
+      logger.debug(
+        { aiEnabled: env.AI_ENABLED, providerConfigured: provider?.isConfigured() ?? false },
+        'AI analysis: skipped (disabled or not configured)',
+      );
+    }
+    return null;
+  }
+
+  const startedAt = Date.now();
+  try {
+    const result = await provider.analyzeJobContent({ rawText });
+    // Dev-only: whether AI was called, its confidence, and processing time
+    // — never the raw text/prompt content, and never the API key.
+    if (env.isDevelopment) {
+      logger.debug(
+        {
+          provider: provider.name,
+          isJobPosting: result.isJobPosting,
+          confidence: result.confidence,
+          processingTimeMs: Date.now() - startedAt,
+        },
+        'AI analysis: completed',
+      );
+    }
+    return result;
+  } catch (err) {
+    const code = err instanceof AIProviderError ? err.code : 'UNKNOWN';
+    if (env.isDevelopment) {
+      logger.warn(
+        { provider: provider.name, code, processingTimeMs: Date.now() - startedAt },
+        'AI analysis: failed — continuing with the deterministic pipeline only',
+      );
+    } else {
+      // Production: no processing-time/raw-content detail, just enough to
+      // know AI degraded without exposing anything sensitive.
+      logger.warn({ provider: provider.name, code }, 'AI analysis failed — continuing without it');
+    }
+    return null;
+  }
 }
 
 interface PipelineResult extends EvaluatedPosting {
@@ -86,6 +181,12 @@ async function runAnalysisPipeline(rawText: string): Promise<PipelineResult> {
   // name, job-related or not). A scam job posting is still a job posting —
   // this only screens out content unrelated to jobs entirely.
   const contentValidation = validateJobContent(rawText);
+  if (env.isDevelopment) {
+    logger.debug(
+      { isJobContent: contentValidation.isJobContent, confidence: contentValidation.confidence },
+      'Job content validation: balanced-confidence result',
+    );
+  }
   if (!contentValidation.isJobContent) {
     throw new ApiError(400, contentValidation.reason);
   }
@@ -125,16 +226,85 @@ async function runAnalysisPipeline(rawText: string): Promise<PipelineResult> {
     }
   }
 
-  const evaluated = await evaluateJobText(rawText);
+  // Groq analysis (Phase 7 — hybrid pipeline): runs before the deterministic
+  // engine below per the hybrid pipeline design, but its findings are only
+  // ever merged in AFTER evaluateDeterministic() has already produced its
+  // own redFlags/totalWeight — never fed into the rule engine or
+  // correlation layer, and never able to skip or short-circuit either...
+  // except for the document-classification gate immediately below, which
+  // is a deliberate, separate exception to that rule (see Phase 8).
+  const aiResult = await runAIAnalysis(rawText);
 
-  let aiExplanation: string | null = null;
-  let aiConfidence: number | null = null;
-  if (isGeminiConfigured()) {
+  // Document classification gate (Phase 8): the AI's classification is the
+  // ONLY thing that can stop analysis before the rule engine runs — a
+  // resume, assignment, or company brochure should never reach
+  // MISSING_COMPANY_NAME/GENERIC_EMAIL_DOMAIN etc. at all, not just have
+  // its own AI-suggested flags withheld (that's a different, existing gate
+  // — see mergeAIFindings). Only fires when AI actually classified the
+  // document (aiResult !== null) and is confident enough to trust; when AI
+  // is disabled/unconfigured/failed, this block is skipped entirely and the
+  // deterministic pipeline runs exactly as it did before this phase.
+  if (aiResult) {
+    const classification = evaluateDocumentClassification(
+      aiResult.documentType,
+      aiResult.documentTypeConfidence,
+    );
+    if (env.isDevelopment) {
+      logger.debug(
+        {
+          documentType: aiResult.documentType,
+          documentTypeConfidence: aiResult.documentTypeConfidence,
+          shouldReject: classification.shouldReject,
+        },
+        'AI document classification: result',
+      );
+    }
+    if (classification.shouldReject) {
+      throw new ApiError(400, classification.message ?? 'This document is not a recruitment posting.', true, {
+        documentType: aiResult.documentType,
+        documentTypeConfidence: aiResult.documentTypeConfidence,
+      });
+    }
+  }
+
+  const deterministic = await evaluateDeterministic(rawText);
+
+  // Additive-only merge (see aiResultMerger.ts for the safety limits): a
+  // null aiResult (AI disabled/unconfigured/failed) makes this a no-op that
+  // returns deterministic.redFlags/totalWeight completely untouched — the
+  // exact same values the pipeline already produced before this phase.
+  const merged = mergeAIFindings(
+    { redFlags: deterministic.redFlags, totalWeight: deterministic.totalWeight },
+    aiResult,
+  );
+  if (env.isDevelopment && merged.redFlags.length > deterministic.redFlags.length) {
+    logger.debug(
+      {
+        addedFlags: merged.redFlags.length - deterministic.redFlags.length,
+        additionalWeight: merged.totalWeight - deterministic.totalWeight,
+      },
+      'AI merge: added supporting red flags on top of the deterministic result',
+    );
+  }
+
+  const riskScore = computeRiskScore(merged.totalWeight);
+  const riskLevel = computeRiskLevel(riskScore);
+
+  let aiExplanation = merged.aiExplanation;
+  let aiConfidence = merged.aiConfidence;
+
+  // Gemini's explanation layer is now a fallback: it only runs if Groq
+  // didn't already produce a usable explanation above, so the single
+  // aiExplanation/aiConfidence slot is never fought over by two AI calls,
+  // and nothing changes for anyone currently relying on Gemini alone (Groq
+  // disabled by default → aiExplanation is always null here → this branch
+  // behaves exactly as it did before this phase).
+  if (aiExplanation === null && isGeminiConfigured()) {
     const explanation = await generateExplanation({
       rawText,
-      riskScore: evaluated.riskScore,
-      riskLevel: evaluated.riskLevel,
-      redFlags: evaluated.redFlags,
+      riskScore,
+      riskLevel,
+      redFlags: merged.redFlags,
       greenFlags: [],
     });
     if (explanation) {
@@ -143,7 +313,15 @@ async function runAnalysisPipeline(rawText: string): Promise<PipelineResult> {
     }
   }
 
-  return { ...evaluated, aiExplanation, aiConfidence };
+  return {
+    normalizedText: deterministic.normalizedText,
+    extractedFields: deterministic.extractedFields,
+    redFlags: merged.redFlags,
+    riskScore,
+    riskLevel,
+    aiExplanation,
+    aiConfidence,
+  };
 }
 
 export async function createAnalysis(

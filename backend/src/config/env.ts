@@ -27,6 +27,20 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
   GEMINI_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
+  // Optional — architecture seam only (modules/analysis/ai/), not yet called
+  // from anywhere. The app must work fully without it.
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
+  GROQ_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
+  // Master switch for the AI provider layer (Phase 7). Defaults to false so
+  // every existing environment behaves exactly as before this phase, even
+  // if GROQ_API_KEY happens to already be set. Deliberately NOT
+  // z.coerce.boolean() — that coerces the string "false" to `true` (any
+  // non-empty string is truthy), which would silently defeat this flag.
+  AI_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 const parsed = envSchema.safeParse(process.env);

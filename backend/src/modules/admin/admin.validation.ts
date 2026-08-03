@@ -8,6 +8,12 @@ const recommendationField = z.string().trim().min(1).max(1000);
 const keywordMatcherSchema = z.object({
   type: z.literal('keyword'),
   keywords: z.array(z.string().trim().min(1)).min(1),
+  // Optional, backward-compatible contextual-matching extensions — see
+  // ruleEngine.ts's KeywordMatcherConfig. Rules that omit them match exactly
+  // as before; declared here only so admin create/update doesn't silently
+  // strip them (z.object() drops unknown keys by default).
+  weakKeywords: z.array(z.string().trim().min(1)).optional(),
+  contextKeywords: z.array(z.string().trim().min(1)).optional(),
   recommendation: recommendationField,
 });
 

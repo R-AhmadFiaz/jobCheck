@@ -14,10 +14,11 @@ interface SeedRule {
 }
 
 const SEED_RULES: SeedRule[] = [
+  // ── Payment ──────────────────────────────────────────────────────────────
   {
     key: 'UPFRONT_PAYMENT_REQUEST',
     description:
-      'Detects requests for an upfront payment, fee, or deposit before employment begins.',
+      'Detects requests for an upfront payment, fee, or deposit before employment begins. Covers advance-payment, registration-fee, security-deposit, training-fee, and equipment-purchase scams, which are all the same underlying pattern.',
     category: 'payment',
     severity: 'high',
     weight: 32,
@@ -32,7 +33,15 @@ const SEED_RULES: SeedRule[] = [
         'security deposit',
         'refundable deposit',
         'pay before you start',
+        'pay to apply',
+        'starter kit fee',
       ],
+      // "fee" alone is genuinely ambiguous (gym membership fee, parking fee
+      // in a benefits list, etc.) — only one weak keyword is used here on
+      // purpose, so it can only be reinforced by a strong phrase or a
+      // contextKeywords hit, never by co-occurring with another weak term.
+      weakKeywords: ['fee'],
+      contextKeywords: ['job', 'apply', 'hiring', 'position', 'salary', 'recruiter', 'interview'],
       recommendation:
         'Legitimate employers never ask candidates to pay money upfront. Do not send any payment, deposit, or fee to a recruiter or employer.',
     },
@@ -52,8 +61,33 @@ const SEED_RULES: SeedRule[] = [
     },
   },
   {
+    key: 'WORK_PERMIT_VISA_FEE_SCAM',
+    description:
+      'Detects requests for payment tied to visa sponsorship or work-permit processing — a common tactic in fake overseas-job scams.',
+    category: 'immigration',
+    severity: 'high',
+    weight: 32,
+    matcher: {
+      type: 'keyword',
+      keywords: [
+        'visa processing fee',
+        'work permit fee',
+        'visa sponsorship fee',
+        'pay for visa processing',
+        'immigration processing fee',
+        'work permit processing charges',
+        'visa fee before joining',
+      ],
+      recommendation:
+        "Legitimate employers and immigration authorities do not ask candidates to personally pay a recruiter for visa or work-permit processing. Verify any visa sponsorship claim directly with the employer's official channels or a licensed immigration authority.",
+    },
+  },
+
+  // ── Salary ───────────────────────────────────────────────────────────────
+  {
     key: 'UNREALISTIC_EARNINGS_CLAIM',
-    description: 'Detects exaggerated or guaranteed-income language typical of scam postings.',
+    description:
+      'Detects exaggerated or guaranteed-income language typical of scam postings. Covers both unrealistic salary promises and guaranteed-income claims, which use the same phrasing patterns.',
     category: 'salary',
     severity: 'high',
     weight: 32,
@@ -84,6 +118,8 @@ const SEED_RULES: SeedRule[] = [
         'Compare any quoted pay rate against typical market rates for the role before proceeding.',
     },
   },
+
+  // ── Contact ──────────────────────────────────────────────────────────────
   {
     key: 'GENERIC_EMAIL_DOMAIN',
     description:
@@ -105,6 +141,34 @@ const SEED_RULES: SeedRule[] = [
         'A legitimate company usually contacts candidates from a company-branded email domain, not a free personal one.',
     },
   },
+  {
+    key: 'OFF_PLATFORM_MESSAGING_ONLY_RECRUITER',
+    description:
+      'Detects recruiters who insist on WhatsApp- or Telegram-only communication with no other verifiable contact channel. Merges the WhatsApp-only and Telegram-only patterns, since they are the same underlying red flag.',
+    category: 'contact',
+    severity: 'low',
+    weight: 12,
+    matcher: {
+      type: 'keyword',
+      // Deliberately full phrases, not bare "whatsapp"/"telegram" — plenty of
+      // legitimate postings mention one as an additional contact option.
+      // The red flag is exclusivity ("only"), not the platform itself.
+      keywords: [
+        'whatsapp only',
+        'telegram only',
+        'contact us on whatsapp only',
+        'message us on telegram only',
+        'add us on telegram to proceed',
+        'reach out on whatsapp only',
+        'communication only through whatsapp',
+        'communication only through telegram',
+      ],
+      recommendation:
+        'Be cautious of recruiters who insist on communicating only through WhatsApp or Telegram with no company email or phone number — legitimate employers are reachable through verifiable, company-branded channels.',
+    },
+  },
+
+  // ── Urgency ──────────────────────────────────────────────────────────────
   {
     key: 'URGENCY_PRESSURE_LANGUAGE',
     description: "Detects urgency or pressure language designed to rush a candidate's decision.",
@@ -146,6 +210,8 @@ const SEED_RULES: SeedRule[] = [
         'Legitimate employers virtually always interview or screen candidates before hiring.',
     },
   },
+
+  // ── Company identity ─────────────────────────────────────────────────────
   {
     key: 'MISSING_COMPANY_NAME',
     description: 'Detects job postings that never clearly identify the hiring company.',
@@ -176,6 +242,156 @@ const SEED_RULES: SeedRule[] = [
       ],
       recommendation:
         'Ask for the specific, verifiable name of the hiring company before proceeding.',
+    },
+  },
+
+  // ── Identity & financial-credential harvesting ───────────────────────────
+  {
+    key: 'IDENTITY_DOCUMENT_HARVESTING',
+    description:
+      'Detects early, unsolicited requests to send copies of identity documents such as a passport or national ID card.',
+    category: 'identity_fraud',
+    severity: 'high',
+    weight: 30,
+    matcher: {
+      type: 'keyword',
+      keywords: [
+        'copy of your passport',
+        'scan of your national id',
+        'copy of your national id',
+        'your cnic number',
+        'photo of your id card',
+        'copy of your driving license',
+        'copy of your id card',
+        'passport number and photo',
+      ],
+      recommendation:
+        'Never send copies of your passport, national ID, or other identity documents to an unverified recruiter — legitimate employers only request identity documents after a formal, verifiable offer, typically through a secure company system.',
+    },
+  },
+  {
+    key: 'BANKING_OTP_HARVESTING',
+    description:
+      'Detects requests for a one-time password (OTP), card CVV/PIN, or online banking password — information no legitimate employer ever needs. Merges banking-credential and OTP/verification-code harvesting, since both target the same never-share-this secrets.',
+    category: 'financial_fraud',
+    severity: 'high',
+    weight: 35,
+    matcher: {
+      type: 'keyword',
+      keywords: [
+        'share your otp',
+        'send your otp',
+        'the otp you received',
+        'your card cvv',
+        'your atm pin',
+        'net banking password',
+        'your card pin',
+        'one time password to',
+        'online banking password',
+        'the verification code you received',
+      ],
+      recommendation:
+        'Never share an OTP, card CVV, PIN, or online banking password with anyone — no legitimate employer, bank, or recruiter will ever ask for these. Sharing them can let someone drain your bank account.',
+    },
+  },
+
+  // ── Business model / investment disguised as employment ─────────────────
+  {
+    key: 'MLM_RECRUITMENT_CHAIN',
+    description:
+      'Detects multi-level-marketing (MLM) or pyramid-style recruitment-chain language disguised as a standard job opening.',
+    category: 'business_model',
+    severity: 'medium',
+    weight: 22,
+    matcher: {
+      type: 'keyword',
+      keywords: [
+        'recruit others to earn',
+        // The "...and earn" qualifier is what distinguishes this from an
+        // ordinary, legitimate "you'll build and lead your own team" line in
+        // a management/leadership job posting.
+        'build your own team and earn',
+        'network marketing opportunity',
+        'multi level marketing',
+        'multi-level marketing',
+        'earn from your downline',
+        'invite friends to join and earn',
+        'earn commission by recruiting',
+      ],
+      recommendation:
+        'Be cautious of postings where your earnings depend mainly on recruiting other people rather than performing a defined job — this is characteristic of multi-level-marketing and pyramid-style schemes, not standard employment.',
+    },
+  },
+  {
+    key: 'CRYPTO_INVESTMENT_DISGUISED_AS_JOB',
+    description:
+      'Detects "task-based" crypto trading jobs that require depositing or topping up funds before earnings can be withdrawn.',
+    category: 'crypto',
+    severity: 'high',
+    weight: 30,
+    matcher: {
+      type: 'keyword',
+      keywords: [
+        'deposit usdt to start working',
+        'top up your wallet to unlock tasks',
+        'crypto trading task job',
+        'recharge your account to withdraw earnings',
+        'complete tasks to earn commission crypto',
+        'deposit funds to activate your account',
+        'pay to unlock your withdrawal',
+      ],
+      // "usdt" alone is rare enough in ordinary text to be a safe single
+      // weak term; "crypto"/"wallet"/"trading" are common in perfectly
+      // legitimate blockchain-industry job ads, so they're context only —
+      // they never trigger the rule by themselves.
+      weakKeywords: ['usdt'],
+      contextKeywords: ['deposit', 'recharge', 'top up', 'withdraw', 'task', 'wallet', 'commission'],
+      recommendation:
+        'Be extremely cautious of any "job" that asks you to deposit cryptocurrency or funds into a wallet or account before you can complete tasks or withdraw earnings — this is a well-documented scam pattern, not a real job.',
+    },
+  },
+
+  // ── Mule schemes ─────────────────────────────────────────────────────────
+  {
+    key: 'PARCEL_RESHIPPING_MULE_JOB',
+    description:
+      'Detects "package forwarding" or "reshipping" job offers that ask candidates to receive and re-mail parcels from home. Merges package-forwarding and reshipping examples, since they describe the same scheme.',
+    category: 'mule_scheme',
+    severity: 'high',
+    weight: 28,
+    matcher: {
+      type: 'keyword',
+      keywords: [
+        'reship packages from home',
+        'receive and forward packages',
+        'package forwarding job',
+        'repackage and reship',
+        'parcel forwarding agent',
+        'receive packages and mail them out',
+      ],
+      recommendation:
+        'Jobs that involve receiving packages at your home and reshipping them elsewhere are a well-known scam and money-laundering method (often called a "reshipping" or "parcel mule" scheme) and can expose you to criminal liability. Do not provide your address or accept packages for this purpose.',
+    },
+  },
+  {
+    key: 'MONEY_MULE_BANK_TRANSFER_JOB',
+    description:
+      'Detects "jobs" that ask candidates to receive funds into their personal bank account and transfer them onward.',
+    category: 'mule_scheme',
+    severity: 'high',
+    weight: 30,
+    matcher: {
+      type: 'keyword',
+      keywords: [
+        'receive funds into your account and transfer',
+        'receive money into your account and forward',
+        'use your bank account to process payments for us',
+        'use your personal account to receive client funds',
+        'money transfer agent work from home',
+        'receive payments on our behalf using your account',
+      ],
+      recommendation:
+        "Never use your personal bank account to receive and forward money for someone else's \"job\" — this is a money-mule scheme and can make you legally liable for money laundering, even if you never keep any of the funds.",
     },
   },
 ];
