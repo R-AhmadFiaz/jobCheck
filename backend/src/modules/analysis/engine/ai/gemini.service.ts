@@ -75,7 +75,15 @@ async function callGemini({ prompt, responseSchema }: CallGeminiOptions): Promis
     );
 
     if (!res.ok) {
-      logger.warn({ status: res.status }, 'Gemini API returned a non-OK response');
+      // Dev-only: logs Google's own error description (e.g. "API key not
+      // valid") to make misconfiguration diagnosable. Never logs the request
+      // URL or the key itself — only the response body Google sent back.
+      if (env.isDevelopment) {
+        const errorBody = await res.text().catch(() => '<unreadable response body>');
+        logger.warn({ status: res.status, errorBody }, 'Gemini API returned a non-OK response');
+      } else {
+        logger.warn({ status: res.status }, 'Gemini API returned a non-OK response');
+      }
       return null;
     }
 

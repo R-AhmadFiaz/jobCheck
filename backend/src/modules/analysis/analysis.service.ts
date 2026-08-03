@@ -5,6 +5,7 @@ import type { CreateAnalysisInput } from '@/modules/analysis/analysis.validation
 import type { AccessTokenPayload } from '@/shared/utils/jwt';
 import { ApiError } from '@/shared/utils/ApiError';
 import { normalizeJobPosting } from '@/modules/analysis/engine/textNormalizer';
+import { validateJobContent } from '@/modules/analysis/engine/jobContentValidator';
 import { evaluateActiveRules, ENGINE_VERSION } from '@/modules/analysis/engine/ruleEngine';
 import { computeRiskScore, computeRiskLevel } from '@/modules/analysis/engine/scoring';
 import type { RiskLevel } from '@/shared/types/riskLevel';
@@ -68,16 +69,54 @@ interface PipelineResult extends EvaluatedPosting {
 
 /**
  * The full pipeline both createAnalysis and createPublicAnalysis run
- * through: optional Gemini validation (advisory, fail-open) → the existing
- * rule engine (evaluateJobText — unchanged, sole scoring authority) →
- * optional Gemini explanation (advisory, fail-open). Gemini can never set or
- * override a score, and its unavailability (no API key, timeout, quota,
- * malformed response) never blocks analysis — see docs/ARCHITECTURE.md §8.
+ * through: deterministic job-content validation (local, no external API —
+ * blocks non-job text before any score is computed) → optional Gemini
+ * validation (advisory, fail-open) → the existing rule engine (evaluateJobText
+ * — unchanged, sole scoring authority) → optional Gemini explanation
+ * (advisory, fail-open). Gemini can never set or override a score, and its
+ * unavailability (no API key, timeout, quota, malformed response) never
+ * blocks analysis — see docs/ARCHITECTURE.md §8.
  */
 async function runAnalysisPipeline(rawText: string): Promise<PipelineResult> {
-  if (isGeminiConfigured()) {
+  // Deterministic gate, checked first: catches input that isn't a job
+  // posting/recruitment message at all (chit-chat, gibberish) before it can
+  // reach the rule engine, which would otherwise still produce a non-zero
+  // score off rules that match on the ABSENCE of a signal (e.g.
+  // MISSING_COMPANY_NAME matches any text without a detectable company
+  // name, job-related or not). A scam job posting is still a job posting —
+  // this only screens out content unrelated to jobs entirely.
+  const contentValidation = validateJobContent(rawText);
+  if (!contentValidation.isJobContent) {
+    throw new ApiError(400, contentValidation.reason);
+  }
+
+  const geminiConfigured = isGeminiConfigured();
+
+  // TEMPORARY debug output (dev-only) — added to diagnose whether Gemini
+  // validation is actually being invoked. Never logs the API key itself,
+  // only its presence as a boolean. Remove once resolved.
+  if (env.isDevelopment) {
+    logger.debug({ geminiConfigured }, 'Gemini validation: GEMINI_API_KEY configured?');
+  }
+
+  if (geminiConfigured) {
+    if (env.isDevelopment) {
+      logger.debug('Gemini validation: calling validateJobPostingContent');
+    }
+
     const validation = await validateJobPostingContent(rawText);
-    if (shouldRejectAsNonJobContent(validation)) {
+
+    if (env.isDevelopment) {
+      logger.debug({ validation }, 'Gemini validation: response from Gemini');
+    }
+
+    const shouldReject = shouldRejectAsNonJobContent(validation);
+
+    if (env.isDevelopment) {
+      logger.debug({ shouldReject }, 'Gemini validation: shouldRejectAsNonJobContent result');
+    }
+
+    if (shouldReject) {
       throw new ApiError(
         400,
         validation?.reason ||

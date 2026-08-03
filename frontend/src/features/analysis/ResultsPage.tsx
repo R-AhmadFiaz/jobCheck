@@ -13,6 +13,7 @@ import {
   ShieldCheckIcon,
   AlertTriangleIcon,
   CheckCircleIcon,
+  XCircleIcon,
   CopyIcon,
   ShareIcon,
   InfoIcon,
@@ -59,6 +60,46 @@ function humanizeLabel(label: string): string {
 
 const severityWeight: Record<'low' | 'medium' | 'high', number> = { low: 1, medium: 2, high: 3 };
 
+// Score-ring color, pill label/emoji, and headline copy, all keyed off the
+// same riskLevel the rest of the page already uses — kept in one place so
+// the ring, pill, and headline can never drift out of sync with each other.
+function riskPresentation(level: RiskLevel) {
+  switch (level) {
+    case 'critical':
+      return {
+        emoji: '🚫',
+        label: 'Likely Scam',
+        headline: 'This posting shows strong indicators of fraud. We recommend not applying.',
+        pillClass: 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400',
+        ringColor: '#EF4444',
+      };
+    case 'high':
+      return {
+        emoji: '🚨',
+        label: 'High Risk',
+        headline: 'This posting shows strong indicators of fraud. We recommend not applying.',
+        pillClass: 'bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-400',
+        ringColor: '#F97316',
+      };
+    case 'medium':
+      return {
+        emoji: '⚠️',
+        label: 'Be Careful',
+        headline: 'This posting shows some signals worth reviewing before applying.',
+        pillClass: 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400',
+        ringColor: '#F59E0B',
+      };
+    default:
+      return {
+        emoji: '✅',
+        label: 'Looks Safe',
+        headline: 'No strong fraud signals were detected in this posting.',
+        pillClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400',
+        ringColor: '#10B981',
+      };
+  }
+}
+
 export function ResultsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -69,6 +110,7 @@ export function ResultsPage() {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [shareModal, setShareModal] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [jobExpanded, setJobExpanded] = useState(false);
 
   // This component is mounted at two different paths: the public, guest-
   // reachable /results/:id (no auth, no ownership check — used for the
@@ -159,6 +201,7 @@ export function ResultsPage() {
 
   const score = report.riskScore;
   const uiRiskLevel = toUiRiskLevel(report.riskLevel, score);
+  const risk = riskPresentation(report.riskLevel);
   const dashOffset = 283 - (283 * score) / 100;
   const title = report.jobTitle ?? 'Job posting analysis';
   const company = report.companyName ?? 'Unknown company';
@@ -223,7 +266,8 @@ export function ResultsPage() {
       />
 
       {tab === 'overview' && (
-        <div className="grid lg:grid-cols-3 gap-6 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
+        <div className="grid lg:grid-cols-3 gap-6">
           <Card className="flex flex-col items-center text-center gap-4 lg:col-span-1">
             <div className="relative w-44 h-44">
               <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
@@ -233,19 +277,13 @@ export function ResultsPage() {
                   cy="60"
                   r="45"
                   fill="none"
-                  stroke="url(#scoreGrad)"
+                  stroke={risk.ringColor}
                   strokeWidth="10"
                   strokeLinecap="round"
                   strokeDasharray="283"
                   strokeDashoffset={dashOffset}
                   style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
                 />
-                <defs>
-                  <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#F59E0B" />
-                    <stop offset="100%" stopColor="#EF4444" />
-                  </linearGradient>
-                </defs>
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span
@@ -260,18 +298,13 @@ export function ResultsPage() {
               </div>
             </div>
             <div>
-              <RiskBadge level={uiRiskLevel} />
-              <p className="text-sm text-[var(--muted-foreground)] mt-2 leading-relaxed">
-                {report.riskLevel === 'critical' || report.riskLevel === 'high' ? (
-                  <>
-                    This posting shows strong indicators of fraud. We recommend{' '}
-                    <strong>not applying</strong>.
-                  </>
-                ) : report.riskLevel === 'medium' ? (
-                  'This posting shows some signals worth reviewing before applying.'
-                ) : (
-                  'No strong fraud signals were detected in this posting.'
-                )}
+              <span
+                className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold ${risk.pillClass}`}
+              >
+                {risk.emoji}&ensp;{risk.label}
+              </span>
+              <p className="text-sm text-[var(--muted-foreground)] mt-3 leading-relaxed">
+                {risk.headline}
               </p>
             </div>
             <div className="w-full">
@@ -286,6 +319,20 @@ export function ResultsPage() {
                 <span>Critical</span>
               </div>
             </div>
+            {report.aiConfidence !== null && (
+              <div className="flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
+                <div className="w-1.5 h-1.5 rounded-full bg-[var(--primary)]" />
+                AI Confidence:
+                <span className="font-semibold text-[var(--foreground)]">
+                  {report.aiConfidence >= 0.75
+                    ? 'High'
+                    : report.aiConfidence >= 0.4
+                      ? 'Medium'
+                      : 'Low'}{' '}
+                  ({Math.round(report.aiConfidence * 100)}%)
+                </span>
+              </div>
+            )}
           </Card>
 
           <div className="lg:col-span-2 space-y-4">
@@ -340,32 +387,46 @@ export function ResultsPage() {
 
             {parsedFlags.length > 0 && (
               <Card>
-                <h3 className="font-bold text-[var(--foreground)] mb-4">Key Red Flags</h3>
+                <h3 className="font-bold text-[var(--foreground)] mb-4">Why AI gave this score</h3>
                 <div className="space-y-2.5">
-                  {parsedFlags.slice(0, 4).map(({ flag, parsed }, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      {flag.severity === 'high' ? (
-                        <AlertTriangleIcon
-                          size={16}
-                          className="text-orange-500 flex-shrink-0 mt-0.5"
-                        />
-                      ) : flag.severity === 'medium' ? (
-                        <InfoIcon size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                      ) : (
-                        <InfoIcon size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
-                      )}
-                      <div>
-                        <p className="text-sm font-medium text-[var(--foreground)]">
-                          {humanizeLabel(flag.label)}
-                        </p>
-                        {parsed.evidence && (
-                          <p className="text-xs text-[var(--muted-foreground)] mt-0.5 italic">
-                            Evidence: {parsed.evidence}
+                  {parsedFlags.slice(0, 4).map(({ flag, parsed }, i) => {
+                    const sev =
+                      flag.severity === 'high'
+                        ? {
+                            bg: 'bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-900/40',
+                            icon: <XCircleIcon size={18} className="text-red-500" />,
+                          }
+                        : flag.severity === 'medium'
+                          ? {
+                              bg: 'bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-900/40',
+                              icon: <AlertTriangleIcon size={18} className="text-amber-500" />,
+                            }
+                          : {
+                              bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-900/40',
+                              icon: <ShieldCheckIcon size={18} className="text-blue-400" />,
+                            };
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-start gap-3 p-4 rounded-2xl border ${sev.bg}`}
+                      >
+                        <div className="mt-0.5 flex-shrink-0">{sev.icon}</div>
+                        <div>
+                          <p className="text-sm font-semibold text-[var(--foreground)] leading-snug mb-0.5">
+                            {humanizeLabel(flag.label)}
                           </p>
-                        )}
+                          <p className="text-sm text-[var(--muted-foreground)] leading-relaxed">
+                            {parsed.summary}
+                          </p>
+                          {parsed.evidence && (
+                            <p className="text-xs text-[var(--muted-foreground)] mt-1 italic">
+                              Evidence: {parsed.evidence}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {parsedFlags.length > 4 && (
                   <button
@@ -415,6 +476,82 @@ export function ResultsPage() {
             )}
           </div>
         </div>
+
+        {uniqueRecommendations.length > 0 && (
+          <Card>
+            <h3 className="font-bold text-[var(--foreground)] mb-4">Before you apply</h3>
+            <div className="divide-y divide-[var(--border)]">
+              {uniqueRecommendations.slice(0, 6).map((r, i) => (
+                <div key={i} className="flex items-center gap-3 py-3">
+                  <CheckCircleIcon size={17} className="text-emerald-500 flex-shrink-0" />
+                  <span className="text-sm text-[var(--foreground)]">{r.recommendation}</span>
+                </div>
+              ))}
+            </div>
+            {uniqueRecommendations.length > 6 && (
+              <button
+                onClick={() => setTab('recommendations')}
+                className="mt-3 text-sm font-semibold text-[var(--primary)] hover:underline flex items-center gap-1"
+              >
+                View all {uniqueRecommendations.length} recommendations
+              </button>
+            )}
+          </Card>
+        )}
+
+        <Card padding="none">
+          <button
+            onClick={() => setJobExpanded(!jobExpanded)}
+            className="w-full flex items-center justify-between px-6 py-4 text-left"
+          >
+            <span className="text-sm font-semibold text-[var(--foreground)]">Job details</span>
+            <div className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
+              {jobExpanded ? 'Hide' : 'Show'}
+              <ChevronDownIcon
+                size={14}
+                className={`transition-transform duration-200 ${jobExpanded ? 'rotate-180' : ''}`}
+              />
+            </div>
+          </button>
+          {jobExpanded && (
+            <div className="px-6 pb-5 space-y-3 border-t border-[var(--border)] pt-4 animate-fade-in">
+              {[
+                { label: 'Job title', value: title },
+                { label: 'Company', value: company },
+                { label: 'Analyzed', value: new Date(report.createdAt).toLocaleString() },
+                { label: 'Engine version', value: report.engineVersion },
+              ].map((row) => (
+                <div key={row.label} className="flex items-start justify-between gap-4 text-sm">
+                  <span className="text-[var(--muted-foreground)] font-medium flex-shrink-0">
+                    {row.label}
+                  </span>
+                  <span className="text-[var(--foreground)] text-right">{row.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <div className="space-y-3">
+          <Button
+            size="lg"
+            className="w-full"
+            icon={<ZapIcon size={15} />}
+            onClick={() => goToAnalyzer()}
+          >
+            Analyze Another Job
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            className="w-full"
+            icon={<ShareIcon size={14} />}
+            onClick={() => setShareModal(true)}
+          >
+            Share Result
+          </Button>
+        </div>
+      </div>
       )}
 
       {tab === 'indicators' && (
