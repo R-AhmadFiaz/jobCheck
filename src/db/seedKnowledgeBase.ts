@@ -1,3 +1,4 @@
+import { configureDns } from '@/lib/configureDns';
 import mongoose from 'mongoose';
 import { env } from '@/config/env';
 import { Company } from '@/modules/companies/company.model';
@@ -9,6 +10,8 @@ import {
 } from '@/modules/knowledgeBase/knowledgeBaseEntry.model';
 import type { RiskLevel } from '@/shared/types/riskLevel';
 import { logger } from '@/shared/utils/logger';
+
+configureDns();
 
 interface SeedCommunityReport {
   category: string;
@@ -249,7 +252,7 @@ async function resolveEntityRef(
 }
 
 async function main(): Promise<void> {
-  await mongoose.connect(env.MONGODB_URI);
+  await mongoose.connect(env.MONGODB_URI, { dbName: 'jobcheck' });
   logger.info('Connected to MongoDB for seeding');
 
   for (const entry of SEED_ENTRIES) {

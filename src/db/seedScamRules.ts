@@ -1,7 +1,10 @@
+import { configureDns } from '@/lib/configureDns';
 import mongoose from 'mongoose';
 import { env } from '@/config/env';
 import { ScamRule } from '@/modules/analysis/engine/scamRule.model';
 import { logger } from '@/shared/utils/logger';
+
+configureDns();
 
 interface SeedRule {
   key: string;
@@ -433,7 +436,7 @@ const SEED_RULES: SeedRule[] = [
 ];
 
 async function main(): Promise<void> {
-  await mongoose.connect(env.MONGODB_URI);
+  await mongoose.connect(env.MONGODB_URI, { dbName: 'jobcheck' });
   logger.info('Connected to MongoDB for seeding');
 
   for (const rule of SEED_RULES) {
