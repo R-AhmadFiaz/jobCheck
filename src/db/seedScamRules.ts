@@ -36,11 +36,33 @@ const SEED_RULES: SeedRule[] = [
         'starter kit fee',
       ],
       // "fee" alone is genuinely ambiguous (gym membership fee, parking fee
-      // in a benefits list, etc.) — only one weak keyword is used here on
-      // purpose, so it can only be reinforced by a strong phrase or a
-      // contextKeywords hit, never by co-occurring with another weak term.
+      // in a benefits list, referral fee paid *to* a candidate, etc.) — only
+      // one weak keyword is used here on purpose, so it can only be
+      // reinforced by a strong phrase or a contextKeywords hit, never by
+      // co-occurring with another weak term. contextKeywords must actually
+      // indicate a payment is being demanded *from* the applicant — generic
+      // job-posting vocabulary ("job", "apply", "hiring", "position",
+      // "salary", "recruiter", "interview") used to sit here, but those
+      // words appear in nearly every legitimate posting, which made the
+      // "reinforcement" requirement nearly meaningless in practice (any
+      // posting mentioning "fee" in an unrelated sense — or even just the
+      // substring "fee" inside "coffee" — would get flagged as soon as it
+      // also said "apply" or "salary", which is close to all of them).
       weakKeywords: ['fee'],
-      contextKeywords: ['job', 'apply', 'hiring', 'position', 'salary', 'recruiter', 'interview'],
+      contextKeywords: [
+        'upfront',
+        'refundable',
+        'before you start',
+        'before you begin',
+        'before you can start',
+        'processing charge',
+        'wire transfer',
+        'money order',
+        'must pay',
+        'required to pay',
+        'to secure your position',
+        'to activate your account',
+      ],
       recommendation:
         'Legitimate employers never ask candidates to pay money upfront. Do not send any payment, deposit, or fee to a recruiter or employer.',
     },
@@ -237,7 +259,22 @@ const SEED_RULES: SeedRule[] = [
         'a fast growing organization',
         'confidential company',
         'a well known company',
-        'our client',
+      ],
+      // "our client(s)" alone is completely ordinary language for a
+      // staffing/recruiting/consulting firm describing its own business
+      // (e.g. "we deliver solutions to clients like Google") — it says
+      // nothing about vagueness by itself. It's only the classic
+      // anonymous-employer pattern when it's standing in *for* the real
+      // employer's name — "our client is hiring", "on behalf of our
+      // client" — which is what the contextKeywords require here.
+      weakKeywords: ['our client'],
+      contextKeywords: [
+        'is hiring',
+        'is seeking',
+        'is looking for',
+        'on behalf of',
+        "client's name is confidential",
+        'undisclosed company',
       ],
       recommendation:
         'Ask for the specific, verifiable name of the hiring company before proceeding.',

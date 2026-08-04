@@ -9,12 +9,14 @@ const URL_PATTERN = /^https?:\/\/\S+$/i;
 const EMAIL_PATTERN = /[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}/;
 
 // A single capitalized "word" a company name can be built from: letters,
-// digits, &, ' (straight or curly), - , plus an optional trailing
-// `.something` segment for domain-style names/abbreviations (PakWheels.com,
-// Inc.). The dot is deliberately NOT a bare allowed character (unlike the
-// pre-fix version) — it only matches as part of `\.[A-Za-z0-9]+`, i.e. only
-// when followed by more alphanumerics. Two bugs in the original pattern
-// depended on exactly this distinction:
+// digits, &, ' (straight or curly), - , ® ™ © (trademark/copyright marks —
+// "At BairesDev®, we've..." would otherwise fail to extract, since the mark
+// sits directly between the name and the following comma with no space),
+// plus an optional trailing `.something` segment for domain-style names/
+// abbreviations (PakWheels.com, Inc.). The dot is deliberately NOT a bare
+// allowed character (unlike the pre-fix version) — it only matches as part
+// of `\.[A-Za-z0-9]+`, i.e. only when followed by more alphanumerics. Two
+// bugs in the original pattern depended on exactly this distinction:
 //  1. A bare trailing dot (an ordinary sentence-ending period, e.g. "About
 //     PakWheels.") would otherwise get greedily swallowed into the token
 //     ("PakWheels."), since `.` was an unconditionally allowed character.
@@ -22,7 +24,7 @@ const EMAIL_PATTERN = /[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}/;
 //     capture "PakWheels," (comma included) instead of "PakWheels" — comma
 //     is excluded entirely now; it's always a clause separator, never part
 //     of a real company name.
-const NAME_TOKEN = `[A-Z][\\w&'’-]*(?:\\.[A-Za-z0-9]+)*`;
+const NAME_TOKEN = `[A-Z][\\w&'’®™©-]*(?:\\.[A-Za-z0-9]+)*`;
 // Multi-word names ("Example AI Labs") are joined by plain horizontal
 // whitespace only — deliberately NOT `\s`, which also matches newlines.
 // Job postings routinely have a capitalized word starting the very next
@@ -86,7 +88,7 @@ const COMPANY_NAME_PATTERNS: RegExp[] = [
 ];
 
 function firstWordIsStopword(candidate: string): boolean {
-  const firstWord = candidate.split(/\s+/)[0]?.toLowerCase().replace(/[.,;:'’-]+$/, '');
+  const firstWord = candidate.split(/\s+/)[0]?.toLowerCase().replace(/[.,;:'’®™©-]+$/, '');
   return firstWord ? COMPANY_NAME_STOPWORDS.has(firstWord) : true;
 }
 
@@ -102,7 +104,7 @@ function extractCompanyName(text: string): string | null {
     const candidate = match?.[1]?.trim();
     if (!candidate) continue;
     if (firstWordIsStopword(candidate)) continue;
-    return candidate.replace(/[.,;:'’-]+$/, '');
+    return candidate.replace(/[.,;:'’®™©-]+$/, '');
   }
   return null;
 }

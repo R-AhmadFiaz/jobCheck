@@ -158,3 +158,96 @@ test('full PakWheels posting: company is detected as PakWheels', () => {
   const { extractedFields } = normalizeJobPosting(PAKWHEELS_FULL_POSTING);
   assert.equal(extractedFields.companyName, 'PakWheels');
 });
+
+// Regression coverage for the BairesDev false-positive bug: "At BairesDev®,
+// we've been leading..." — the ® sits directly between the name and the
+// following comma with no space, so NAME_TOKEN's character class needed to
+// allow (and then strip) ®/™/© rather than treating them as a token
+// terminator that broke the "At X, we" pattern's match entirely.
+
+test('A (BairesDev brief): "At BairesDev®, we\'ve been leading..." extracts BairesDev, mark stripped', () => {
+  const { extractedFields } = normalizeJobPosting(
+    "At BairesDev®, we've been leading the way in technology projects for over 15 years.",
+  );
+  assert.equal(extractedFields.companyName, 'BairesDev');
+});
+
+test('B (BairesDev brief): a trademark or copyright mark never breaks extraction, in any supported pattern', () => {
+  assert.equal(
+    normalizeJobPosting('Company: BairesDev®').extractedFields.companyName,
+    'BairesDev',
+  );
+  assert.equal(
+    normalizeJobPosting('BairesDev™ is hiring a Java Engineer.').extractedFields.companyName,
+    'BairesDev',
+  );
+  assert.equal(
+    normalizeJobPosting('Join BairesDev© today.').extractedFields.companyName,
+    'BairesDev',
+  );
+});
+
+// The complete real-world posting from this bug report — full text, not an
+// isolated sentence — to prove the fix holds up against realistic
+// surrounding content, not just a hand-picked fragment.
+const BAIRESDEV_FULL_POSTING = `
+BairesDev
+
+Java Software Engineer - Remote Work | REF#297056
+
+About the job
+
+At BairesDev®, we've been leading the way in technology projects for over 15
+years. We deliver cutting-edge solutions to giants like Google and the most
+innovative startups in Silicon Valley.
+
+Our diverse 4,000+ team, composed of the world's Top 1% of tech talent,
+works remotely on roles that drive significant impact worldwide.
+
+When you apply for this position, you're taking the first step in a process
+that goes beyond the ordinary. We aim to align your passions and skills with
+our vacancies, setting you on a path to exceptional career development and
+success.
+
+Develop and maintain robust Java applications that deliver reliable
+solutions to meet business objectives. This role focuses on building
+scalable backend systems, collaborating with cross-functional teams, and
+implementing best practices throughout the software development lifecycle.
+
+What You'll Do
+
+Design, develop, and maintain Java applications and backend services.
+Write clean, efficient code following Java best practices and coding standards.
+Build and integrate APIs, microservices, and database systems.
+Collaborate with team members to gather requirements and implement solutions.
+Participate in code reviews and contribute to continuous improvement initiatives.
+Debug and optimize applications to ensure performance and reliability.
+
+What We Are Looking For
+
+3+ years of experience with Java development.
+Strong knowledge of Java, object-oriented programming, and design patterns.
+Experience with Spring Framework or similar Java frameworks.
+Familiarity with database technologies and API development.
+Understanding of software development principles and testing methodologies.
+Advanced level of English.
+
+How we do make your work (and your life) easier:
+
+100% remote work (from anywhere).
+Excellent compensation in USD or your local currency if preferred.
+Hardware and software setup for you to work from home.
+Flexible hours: create your own schedule.
+Paid parental leaves, vacations, and national holidays.
+Innovative and multicultural work environment: collaborate and learn from the global Top 1% of talent.
+Supportive environment with mentorship, promotions, skill development, and diverse growth opportunities.
+
+Join a global team where your unique talents can truly thrive and make a significant impact!
+
+Apply now!
+`;
+
+test('full BairesDev posting: company is detected as BairesDev', () => {
+  const { extractedFields } = normalizeJobPosting(BAIRESDEV_FULL_POSTING);
+  assert.equal(extractedFields.companyName, 'BairesDev');
+});

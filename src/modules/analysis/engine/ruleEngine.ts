@@ -8,7 +8,7 @@ interface BaseMatcherConfig {
   recommendation: string;
 }
 
-interface KeywordMatcherConfig extends BaseMatcherConfig {
+export interface KeywordMatcherConfig extends BaseMatcherConfig {
   type: 'keyword';
   keywords: string[];
   // Optional, backward-compatible: rules that omit these behave exactly as
@@ -33,7 +33,7 @@ interface EmailDomainMatcherConfig extends BaseMatcherConfig {
   genericDomains: string[];
 }
 
-interface FieldPresenceMatcherConfig extends BaseMatcherConfig {
+export interface FieldPresenceMatcherConfig extends BaseMatcherConfig {
   type: 'fieldPresence';
   requiredField: keyof IExtractedFields;
 }
@@ -62,8 +62,26 @@ interface MatchOutcome {
 
 const NO_MATCH: MatchOutcome = { matched: false, evidence: '', confidence: 0 };
 
-function findMatches(text: string, terms: string[]): string[] {
-  return terms.filter((term) => text.includes(term.toLowerCase()));
+// Multi-word phrases keep plain substring matching on purpose — it's what
+// lets a single entry like "registration fee" also match "registration
+// fees" without a second literal entry for the plural. A single short word
+// (e.g. the weak keyword "fee") doesn't get that same benefit of the doubt:
+// substring-matched, it also matches inside completely unrelated words —
+// "coffee", "feedback", "toffee" — which was the exact mechanism behind a
+// real false positive (an ordinary "free coffee" perk line getting counted
+// as evidence for an upfront-payment scam). Single-word terms are matched
+// against real word boundaries instead; multi-word terms are unaffected.
+export function containsTerm(text: string, term: string): boolean {
+  const normalized = term.toLowerCase();
+  if (normalized.includes(' ')) {
+    return text.includes(normalized);
+  }
+  const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`).test(text);
+}
+
+export function findMatches(text: string, terms: string[]): string[] {
+  return terms.filter((term) => containsTerm(text, term));
 }
 
 // Deterministic confidence estimate from three ingredients: how many strong
@@ -76,7 +94,7 @@ function computeMatchConfidence(strongCount: number, weakCount: number, contextC
   return Math.min(1, Math.round(raw * 100) / 100);
 }
 
-function matchKeyword(text: string, config: KeywordMatcherConfig): MatchOutcome {
+export function matchKeyword(text: string, config: KeywordMatcherConfig): MatchOutcome {
   const strongMatches = findMatches(text, config.keywords);
   const contextMatches = config.contextKeywords ? findMatches(text, config.contextKeywords) : [];
 
@@ -137,7 +155,7 @@ function matchEmailDomain(
   return NO_MATCH;
 }
 
-function matchFieldPresence(
+export function matchFieldPresence(
   extractedFields: IExtractedFields,
   config: FieldPresenceMatcherConfig,
 ): MatchOutcome {
