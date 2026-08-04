@@ -31,6 +31,19 @@ interface RawClassificationResponse {
   recommendations: string[];
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+// Production-hardening phase: this used to only check Array.isArray() for
+// redFlags/recommendations, not that every element was actually a string. A
+// model returning e.g. redFlags: [123] would pass that check, then crash
+// synchronously in aiResultMerger.ts's `.trim()` call — caught by Express's
+// asyncHandler either way (never a process crash), but it turned a
+// malformed-AI-response case into an unexpected 500 instead of a clean
+// deterministic-only result. Rejecting it here, as INVALID_RESPONSE, is what
+// makes runAIAnalysis's existing catch-and-return-null path handle it the
+// same safe way as every other malformed response.
 function isRawClassificationShape(value: unknown): value is RawClassificationResponse {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -38,11 +51,12 @@ function isRawClassificationShape(value: unknown): value is RawClassificationRes
     typeof v.documentType === 'string' &&
     DOCUMENT_TYPES.includes(v.documentType as DocumentType) &&
     typeof v.documentTypeConfidence === 'number' &&
+    Number.isFinite(v.documentTypeConfidence) &&
     v.documentTypeConfidence >= 0 &&
     v.documentTypeConfidence <= 1 &&
     typeof v.summary === 'string' &&
-    Array.isArray(v.redFlags) &&
-    Array.isArray(v.recommendations)
+    isStringArray(v.redFlags) &&
+    isStringArray(v.recommendations)
   );
 }
 

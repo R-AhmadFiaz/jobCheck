@@ -111,8 +111,14 @@ async function evaluateDeterministic(rawText: string): Promise<DeterministicEval
  * resolve to `null` here, so the caller always has a safe "AI unavailable"
  * value to hand to mergeAIFindings — the deterministic pipeline never
  * blocks on, or breaks because of, this call.
+ *
+ * Exported (production-hardening phase) specifically so this exact
+ * containment boundary — every AI failure mode resolves to null, exactly
+ * one provider call per invocation, nothing ever thrown past this point —
+ * is directly unit-testable without needing a database. See
+ * tests/runAIAnalysis.test.ts.
  */
-async function runAIAnalysis(rawText: string): Promise<AIProviderAnalysisResult | null> {
+export async function runAIAnalysis(rawText: string): Promise<AIProviderAnalysisResult | null> {
   const provider = getAIProvider();
   if (!provider || !provider.isConfigured()) {
     if (env.isDevelopment) {

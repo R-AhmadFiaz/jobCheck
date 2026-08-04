@@ -51,10 +51,24 @@ function buildAIRedFlag(flagText: string, index: number): IRedFlag {
   };
 }
 
+// Defense in depth (production-hardening phase): groq.provider.ts already
+// validates every element is a string before this function ever sees it,
+// but this merger must stay safe on its own terms too — it's the one place
+// every current and future IAIProvider implementation's output passes
+// through, and "malformed AI results never reach the merger" (per this
+// phase's brief) is a guarantee this function should hold regardless of how
+// disciplined any one provider's own validation happens to be.
+function sanitizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
 function formatAIExplanation(result: AIProviderAnalysisResult): string {
-  const sections = [result.summary.trim()];
-  if (result.recommendations.length) {
-    sections.push(`Recommendations:\n${result.recommendations.map((r) => `- ${r}`).join('\n')}`);
+  const summary = typeof result.summary === 'string' ? result.summary.trim() : '';
+  const recommendations = sanitizeStringList(result.recommendations);
+  const sections = [summary];
+  if (recommendations.length) {
+    sections.push(`Recommendations:\n${recommendations.map((r) => `- ${r}`).join('\n')}`);
   }
   return sections.join('\n\n');
 }
@@ -77,7 +91,10 @@ export function mergeAIFindings(
   base: AIMergeInput,
   aiResult: AIProviderAnalysisResult | null,
 ): AIMergeResult {
-  if (!aiResult || !aiResult.isJobPosting || aiResult.confidence < MIN_AI_CONFIDENCE_TO_USE) {
+  const hasUsableConfidence =
+    !!aiResult && typeof aiResult.confidence === 'number' && Number.isFinite(aiResult.confidence);
+
+  if (!aiResult || !aiResult.isJobPosting || !hasUsableConfidence || aiResult.confidence < MIN_AI_CONFIDENCE_TO_USE) {
     return {
       redFlags: base.redFlags,
       totalWeight: base.totalWeight,
@@ -86,7 +103,7 @@ export function mergeAIFindings(
     };
   }
 
-  const flagTexts = aiResult.redFlags
+  const flagTexts = sanitizeStringList(aiResult.redFlags)
     .map((text) => text.trim())
     .filter((text) => text.length > 0)
     .slice(0, MAX_AI_FLAGS_MERGED);

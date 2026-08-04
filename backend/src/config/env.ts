@@ -17,6 +17,18 @@ const envSchema = z.object({
     .positive()
     .default(15 * 60 * 1000),
   PUBLIC_ANALYSIS_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  // Production-hardening phase: POST /analyses (authenticated) previously had
+  // no rate limit at all, unlike the guest endpoint above — a logged-in
+  // client could otherwise trigger unlimited Groq calls with zero backend
+  // throttling. Keyed by user id rather than IP (see rateLimiter.middleware.ts),
+  // so the limit is more generous than the guest one — authenticated users
+  // are identified and less likely to be abuse — but still bounded.
+  AUTHENTICATED_ANALYSIS_RATE_LIMIT_WINDOW_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15 * 60 * 1000),
+  AUTHENTICATED_ANALYSIS_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
   URL_EXTRACTION_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
   URL_EXTRACTION_MAX_BYTES: z.coerce
     .number()

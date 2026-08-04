@@ -3,7 +3,10 @@ import { authenticate } from '@/shared/middlewares/auth.middleware';
 import { optionalAuthenticate } from '@/shared/middlewares/optionalAuth.middleware';
 import { validate } from '@/shared/middlewares/validate.middleware';
 import { uploadAnalysisFile } from '@/shared/middlewares/upload.middleware';
-import { publicAnalysisRateLimiter } from '@/shared/middlewares/rateLimiter.middleware';
+import {
+  publicAnalysisRateLimiter,
+  authenticatedAnalysisRateLimiter,
+} from '@/shared/middlewares/rateLimiter.middleware';
 import {
   createAnalysisSchema,
   listAnalysesQuerySchema,
@@ -20,7 +23,13 @@ import {
 
 export const analysisRouter = Router();
 
-analysisRouter.post('/analyses', authenticate, validate(createAnalysisSchema), create);
+analysisRouter.post(
+  '/analyses',
+  authenticate,
+  authenticatedAnalysisRateLimiter,
+  validate(createAnalysisSchema),
+  create,
+);
 analysisRouter.get(
   '/analyses',
   authenticate,
