@@ -13,6 +13,7 @@
     "seed:knowledge-base": "tsx src/db/seedKnowledgeBase.ts"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.69.0",
     "@tanstack/react-query": "^5.101.4",
     "bcryptjs": "^3.0.3",
     "cheerio": "^1.2.0",

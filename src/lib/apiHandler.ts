@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { env } from '@/config/env';
 import { ApiError } from '@/shared/utils/ApiError';
 import { logger } from '@/shared/utils/logger';
@@ -56,6 +57,12 @@ export function apiHandler<Ctx = { params: Promise<Record<string, string>> }>(
           { err, path: request.nextUrl.pathname, method: request.method },
           'Unhandled error',
         );
+        // Only genuinely unexpected errors go to Sentry — expected
+        // operational ones (404/401/validation, logged via logger.warn
+        // below) are normal control flow, not incidents to alert on.
+        Sentry.captureException(err, {
+          tags: { path: request.nextUrl.pathname, method: request.method },
+        });
       } else {
         logger.warn({ path: request.nextUrl.pathname, method: request.method }, err.message);
       }

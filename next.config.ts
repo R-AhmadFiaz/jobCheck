@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -27,19 +28,32 @@ const isProd = process.env.NODE_ENV === "production";
 //   as a real stylesheet request.
 // - font-src needs fonts.gstatic.com: the CSS fonts.googleapis.com serves
 //   references the actual .woff2 files from that separate domain.
-// - connect-src/img-src stay at 'self' (+ data: for img-src): the frontend
-//   only ever calls relative /api/v1/* paths (confirmed — no cross-origin
-//   fetch target anywhere in client code), and no client-rendered <img>
-//   currently points anywhere but same-origin. The Groq/Gemini AI calls are
-//   made entirely server-side (inside Route Handlers), never by the
-//   browser, so those domains do not need to appear here at all.
+// - connect-src/img-src otherwise stay at 'self' (+ data: for img-src): the
+//   frontend only ever calls relative /api/v1/* paths (confirmed — no other
+//   cross-origin fetch target anywhere in client code), and no
+//   client-rendered <img> currently points anywhere but same-origin. The
+//   Groq/Gemini AI calls are made entirely server-side (inside Route
+//   Handlers), never by the browser, so those domains do not need to appear
+//   here at all.
+// - connect-src additionally allows Sentry's ingest hosts: the browser SDK
+//   (src/instrumentation-client.ts) POSTs error events directly from the
+//   page, which the CSP would otherwise silently block. The exact ingest
+//   hostname is org/region-specific (visible in the DSN once
+//   NEXT_PUBLIC_SENTRY_DSN is set) — this covers every current Sentry SaaS
+//   region pattern; if client-side events still don't arrive, confirm this
+//   matches the real DSN host exactly.
+const SENTRY_CONNECT_SRC = [
+  "https://*.ingest.sentry.io",
+  "https://*.ingest.us.sentry.io",
+  "https://*.ingest.de.sentry.io",
+];
 const cspDirectives = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data:",
   "font-src 'self' https://fonts.gstatic.com",
-  "connect-src 'self'",
+  `connect-src 'self' ${SENTRY_CONNECT_SRC.join(" ")}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -71,4 +85,15 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// org/project/authToken are only used for uploading source maps at build
+// time (a separate, optional nicety from actually reporting errors, which
+// instrumentation.ts/instrumentation-client.ts handle independently) — all
+// three are undefined unless explicitly set, in which case the plugin skips
+// the upload step silently rather than failing the build. authToken is a
+// real secret if ever set: only via env var (SENTRY_AUTH_TOKEN), never here.
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: !process.env.CI,
+});
