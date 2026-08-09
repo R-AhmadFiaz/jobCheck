@@ -17,6 +17,7 @@ import {
   DatabaseIcon,
   ChevronRightIcon,
   ZapIcon,
+  CpuIcon,
   Avatar,
   Dropdown,
   MoreVerticalIcon,
@@ -42,6 +43,7 @@ const adminNavItems: NavItem[] = [
   { to: '/dashboard', label: 'Overview', icon: <LayoutDashboardIcon size={18} /> },
   { to: '/admin/rules', label: 'Rule Manager', icon: <DatabaseIcon size={18} /> },
   { to: '/knowledge-base', label: 'Knowledge Base', icon: <BookOpenIcon size={18} /> },
+  { to: '/admin/api-docs', label: 'API Docs', icon: <CpuIcon size={18} /> },
   { to: '/profile', label: 'Account', icon: <UserIcon size={18} /> },
 ];
 

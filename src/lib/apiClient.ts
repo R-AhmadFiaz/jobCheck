@@ -55,7 +55,10 @@ let pendingRefresh: Promise<boolean> | null = null;
 
 // Refresh token lives only in an httpOnly cookie (§7) — this just re-requests
 // a fresh access token using it. Deduped so concurrent 401s trigger one call.
-async function refreshAccessToken(): Promise<boolean> {
+// Exported so callers that can't go through apiRequest() (e.g. a route whose
+// response isn't the {success,data} envelope) can still get the same
+// refresh-and-retry resilience every other admin page gets for free.
+export async function refreshAccessToken(): Promise<boolean> {
   if (!pendingRefresh) {
     pendingRefresh = (async () => {
       try {
