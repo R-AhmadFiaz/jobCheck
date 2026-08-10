@@ -24,12 +24,14 @@ import {
   XIcon,
   Spinner,
   Alert,
+  Card,
 } from '@/components/ui';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useDarkMode } from '@/hooks/useDarkMode';
 import { createPublicAnalysis } from '@/features/analysis/api/analysis.api';
 import { ApiClientError } from '@/lib/apiClient';
 import { useGoToAnalyzer } from '@/hooks/useGoToAnalyzer';
+import { ContactForm } from '@/features/contact/ContactForm';
 
 const features = [
   {
@@ -182,6 +184,9 @@ export function LandingPage() {
             </a>
             <a href="#faq" className="hover:text-[var(--foreground)] transition-colors">
               FAQ
+            </a>
+            <a href="#contact" className="hover:text-[var(--foreground)] transition-colors">
+              Contact
             </a>
           </div>
           <div className="flex items-center gap-2">
@@ -569,6 +574,27 @@ export function LandingPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Contact */}
+      <section id="contact" className="py-24 max-w-3xl mx-auto px-6">
+        <div className="text-center mb-12">
+          <span className="text-sm font-semibold text-[var(--primary)] uppercase tracking-widest">
+            Contact
+          </span>
+          <h2
+            className="mt-3 text-4xl font-extrabold text-[var(--foreground)]"
+            style={{ fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}
+          >
+            Get in touch
+          </h2>
+          <p className="mt-3 text-[var(--muted-foreground)]">
+            Questions, feedback, or something doesn&apos;t look right? Send us a message.
+          </p>
+        </div>
+        <Card padding="lg">
+          <ContactForm />
+        </Card>
       </section>
 
       {/* Footer */}

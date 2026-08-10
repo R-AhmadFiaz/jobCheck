@@ -318,6 +318,7 @@ export const openApiSpec: OpenApiDocument = {
     { name: 'Admin' },
     { name: 'Knowledge Base' },
     { name: 'Health' },
+    { name: 'Contact' },
   ],
   components: {
     securitySchemes: {
@@ -813,6 +814,40 @@ export const openApiSpec: OpenApiDocument = {
           },
           '400': err400,
           '401': err401,
+        },
+      },
+    },
+
+    '/contact': {
+      post: {
+        tags: ['Contact'],
+        summary: 'Submit a contact-form message',
+        description: 'Public, IP rate-limited. Sends a notification email via Resend to the configured admin inbox — no database persistence.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', minLength: 2, maxLength: 100 },
+                  email: { type: 'string', format: 'email' },
+                  message: { type: 'string', minLength: 10, maxLength: 2000 },
+                },
+                required: ['name', 'email', 'message'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Message sent.',
+            content: { 'application/json': { schema: successOf({ type: 'object', properties: { message: { type: 'string' } } }) } },
+          },
+          '400': err400,
+          '429': err429,
+          '502': { description: 'The email provider failed to send the notification.', content: { 'application/json': { schema: errorResponseSchema } } },
+          '503': { description: 'The contact form is not configured (missing admin inbox).', content: { 'application/json': { schema: errorResponseSchema } } },
         },
       },
     },

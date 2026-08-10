@@ -59,6 +59,15 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  // Resend (contact form notification email) — optional, same "off unless
+  // configured" pattern as GROQ_API_KEY/GEMINI_API_KEY above. CONTACT_EMAIL_TO
+  // is the admin inbox that receives submissions; CONTACT_EMAIL_FROM defaults
+  // to Resend's own documented sandbox sender, usable with no verified domain.
+  RESEND_API_KEY: z.string().optional(),
+  CONTACT_EMAIL_TO: z.string().email().optional(),
+  CONTACT_EMAIL_FROM: z.string().default('JobCheck <onboarding@resend.dev>'),
+  CONTACT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
+  CONTACT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
 });
 
 const parsed = envSchema.safeParse(process.env);

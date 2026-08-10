@@ -76,3 +76,14 @@ export async function checkRegisterRateLimit(ip: string): Promise<void> {
     );
   }
 }
+
+export async function checkContactRateLimit(ip: string): Promise<void> {
+  const result = await store.consume(
+    `contact:${ip}`,
+    env.CONTACT_RATE_LIMIT_WINDOW_MS,
+    env.CONTACT_RATE_LIMIT_MAX,
+  );
+  if (!result.allowed) {
+    throw new ApiError(429, 'Too many messages sent from this IP. Please try again later.');
+  }
+}
