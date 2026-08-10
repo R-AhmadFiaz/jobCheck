@@ -319,6 +319,7 @@ export const openApiSpec: OpenApiDocument = {
     { name: 'Knowledge Base' },
     { name: 'Health' },
     { name: 'Contact' },
+    { name: 'Chat' },
   ],
   components: {
     securitySchemes: {
@@ -848,6 +849,50 @@ export const openApiSpec: OpenApiDocument = {
           '429': err429,
           '502': { description: 'The email provider failed to send the notification.', content: { 'application/json': { schema: errorResponseSchema } } },
           '503': { description: 'The contact form is not configured (missing admin inbox).', content: { 'application/json': { schema: errorResponseSchema } } },
+        },
+      },
+    },
+
+    '/chat': {
+      post: {
+        tags: ['Chat'],
+        summary: 'Send a message to the JobCheck Assistant chatbot',
+        description: 'Public, IP rate-limited. Uses the existing Groq AI provider — no separate AI system. Stateless: the client resends its own conversation history each request; nothing is persisted server-side.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string', minLength: 1, maxLength: 1000 },
+                  history: {
+                    type: 'array',
+                    maxItems: 6,
+                    items: {
+                      type: 'object',
+                      properties: {
+                        role: { type: 'string', enum: ['user', 'assistant'] },
+                        content: { type: 'string', minLength: 1, maxLength: 1000 },
+                      },
+                      required: ['role', 'content'],
+                    },
+                  },
+                },
+                required: ['message'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Assistant reply.',
+            content: { 'application/json': { schema: successOf({ type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'] }) } },
+          },
+          '400': err400,
+          '429': err429,
+          '502': { description: 'The AI provider failed to respond.', content: { 'application/json': { schema: errorResponseSchema } } },
+          '503': { description: 'The chatbot is not configured or AI is disabled (AI_ENABLED=false).', content: { 'application/json': { schema: errorResponseSchema } } },
         },
       },
     },

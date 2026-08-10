@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppProviders } from "@/app/providers/AppProviders";
 import { ToastContainer } from "@/components/ui";
+import { ChatWidget } from "@/features/chat/ChatWidget";
 
 export const metadata: Metadata = {
   title: "JobCheck",
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <AppProviders>
           {children}
           <ToastContainer />
+          <ChatWidget />
         </AppProviders>
       </body>
     </html>

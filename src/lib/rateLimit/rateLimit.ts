@@ -87,3 +87,10 @@ export async function checkContactRateLimit(ip: string): Promise<void> {
     throw new ApiError(429, 'Too many messages sent from this IP. Please try again later.');
   }
 }
+
+export async function checkChatRateLimit(ip: string): Promise<void> {
+  const result = await store.consume(`chat:${ip}`, env.CHAT_RATE_LIMIT_WINDOW_MS, env.CHAT_RATE_LIMIT_MAX);
+  if (!result.allowed) {
+    throw new ApiError(429, 'Too many messages sent. Please wait a moment before trying again.');
+  }
+}

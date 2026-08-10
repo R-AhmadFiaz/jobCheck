@@ -4,6 +4,7 @@ import {
   AIProviderError,
   type AIProviderAnalysisInput,
   type AIProviderAnalysisResult,
+  type ChatMessage,
   type IAIProvider,
 } from '@/modules/analysis/ai/interfaces/IAIProvider';
 import { JOB_ANALYSIS_SYSTEM_PROMPT, buildJobAnalysisPrompt } from '@/modules/analysis/ai/prompts/jobAnalysis.prompt';
@@ -166,5 +167,75 @@ export class GroqProvider implements IAIProvider {
       redFlags: parsed.redFlags,
       recommendations: parsed.recommendations,
     };
+  }
+
+  // For the JobCheck Assistant chatbot (modules/chat/). Deliberately
+  // separate from analyzeJobContent() above rather than sharing a private
+  // helper: this method returns plain text (no response_format/JSON
+  // parsing at all), and keeping it self-contained means this addition
+  // can't affect analyzeJobContent()'s existing, already-tested behavior.
+  async chat(systemPrompt: string, history: readonly ChatMessage[]): Promise<string> {
+    if (!this.isConfigured()) {
+      throw new AIProviderError('MISSING_API_KEY', 'GROQ_API_KEY is not configured.');
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), env.GROQ_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(GROQ_API_BASE, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: env.GROQ_MODEL,
+          temperature: 0.4,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...history.map((m) => ({ role: m.role, content: m.content })),
+          ],
+        }),
+      });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new AIProviderError(
+          'TIMEOUT',
+          `Groq API request timed out after ${env.GROQ_TIMEOUT_MS}ms.`,
+          err,
+        );
+      }
+      throw new AIProviderError('REQUEST_FAILED', 'Groq API request failed.', err);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      const errorBody = env.isDevelopment
+        ? await response.text().catch(() => '<unreadable response body>')
+        : undefined;
+      logger.warn(
+        { status: response.status, provider: this.name, errorBody },
+        'AI provider returned a non-OK response',
+      );
+      throw new AIProviderError('REQUEST_FAILED', `Groq API returned status ${response.status}.`);
+    }
+
+    let body: GroqChatCompletionResponse;
+    try {
+      body = (await response.json()) as GroqChatCompletionResponse;
+    } catch (err) {
+      throw new AIProviderError('INVALID_RESPONSE', 'Groq API response was not valid JSON.', err);
+    }
+
+    const text = body.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new AIProviderError('INVALID_RESPONSE', 'Groq API response did not contain any content.');
+    }
+
+    return text;
   }
 }

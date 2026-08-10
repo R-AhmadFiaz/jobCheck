@@ -68,6 +68,12 @@ const envSchema = z.object({
   CONTACT_EMAIL_FROM: z.string().default('JobCheck <onboarding@resend.dev>'),
   CONTACT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
   CONTACT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
+  // Chatbot (POST /api/v1/chat) — uses the same AI_ENABLED/GROQ_* config
+  // above, no separate provider/API key. Rate limit follows the same
+  // per-feature pattern as CONTACT_RATE_LIMIT_*, tighter since each request
+  // is a real Groq call.
+  CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60 * 1000),
+  CHAT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
 });
 
 const parsed = envSchema.safeParse(process.env);

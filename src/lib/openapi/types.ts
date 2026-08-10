@@ -22,6 +22,8 @@ export interface SchemaObject {
   maximum?: number;
   minLength?: number;
   maxLength?: number;
+  minItems?: number;
+  maxItems?: number;
   default?: unknown;
   $ref?: string;
 }

@@ -44,13 +44,23 @@ export interface AIProviderAnalysisResult {
   recommendations: string[];
 }
 
+// A single turn in a free-form conversation — the JobCheck Assistant
+// chatbot (modules/chat/), a second, independent capability alongside
+// analyzeJobContent() below. Deliberately just role+content: no id/
+// timestamp/metadata, since the provider only needs enough to build a
+// chat-completions request, nothing more.
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface IAIProvider {
   // Short, stable identifier for logging/observability (e.g. "groq").
   readonly name: string;
 
   // Cheap, synchronous check — no network call — so a caller can decide
-  // whether to even attempt analyzeJobContent(). Mirrors the existing
-  // isGeminiConfigured() convention.
+  // whether to even attempt analyzeJobContent()/chat(). Mirrors the
+  // existing isGeminiConfigured() convention.
   isConfigured(): boolean;
 
   // Throws an AIProviderError (see below) on any failure — this interface
@@ -58,6 +68,14 @@ export interface IAIProvider {
   // error and degrades gracefully is a pipeline-level policy decision, not
   // this seam's responsibility.
   analyzeJobContent(input: AIProviderAnalysisInput): Promise<AIProviderAnalysisResult>;
+
+  // Free-form conversational completion for the chatbot — unlike
+  // analyzeJobContent(), returns plain text, not a structured/JSON result.
+  // `systemPrompt` is passed in by the caller (modules/chat/) rather than
+  // hardcoded here, so this method stays a pure "talk to the model" seam,
+  // consistent with analyzeJobContent() also taking its content from the
+  // caller rather than embedding job-analysis-specific text itself.
+  chat(systemPrompt: string, history: readonly ChatMessage[]): Promise<string>;
 }
 
 export type AIProviderErrorCode = 'MISSING_API_KEY' | 'TIMEOUT' | 'INVALID_RESPONSE' | 'REQUEST_FAILED';
