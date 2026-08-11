@@ -38,14 +38,29 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
     throw new Error('Email sending is not configured (RESEND_API_KEY is not set).');
   }
 
-  const { data, error } = await resend.emails.send({
+  const payload = {
     from: env.CONTACT_EMAIL_FROM,
     to: input.to,
     subject: input.subject,
     html: input.html,
     text: input.text,
     replyTo: input.replyTo,
-  });
+  };
+
+  let { data, error } = await resend.emails.send(payload);
+
+  // Resend's SDK reports its own outbound request failing to even reach
+  // their servers (a DNS/network-level problem, confirmed independently of
+  // this app) as error.name === 'application_error' — distinct from a real
+  // rejection (bad key, unverified sender, quota exceeded, etc., which each
+  // have their own specific error name and are never worth retrying). A
+  // transient network blip is the one case worth one quick retry before
+  // giving up.
+  if (error?.name === 'application_error') {
+    logger.warn({ err: error }, 'Resend send hit a network-level error — retrying once');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    ({ data, error } = await resend.emails.send(payload));
+  }
 
   if (error) {
     logger.error({ err: error }, 'Resend email send failed');

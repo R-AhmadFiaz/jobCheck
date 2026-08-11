@@ -14,7 +14,11 @@ const WELCOME_MESSAGE =
 // the sole authority, same deliberate split already used by the contact
 // form's own client-side checks.
 const MAX_MESSAGE_LENGTH = 1000;
-const MAX_HISTORY_TO_SEND = 6;
+// Must match chat.validation.ts's MAX_CHAT_HISTORY_MESSAGES — that schema
+// caps assistant-role history entries at a higher length than user
+// entries (AI replies are naturally longer than a typed question), which
+// is what makes 4 the safe count rather than a larger one.
+const MAX_HISTORY_TO_SEND = 4;
 
 interface DisplayMessage extends ChatHistoryMessage {
   id: string;

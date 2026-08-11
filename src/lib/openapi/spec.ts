@@ -868,14 +868,28 @@ export const openApiSpec: OpenApiDocument = {
                   message: { type: 'string', minLength: 1, maxLength: 1000 },
                   history: {
                     type: 'array',
-                    maxItems: 6,
+                    description: '2 full exchanges max. Assistant entries allow a longer content length than user entries — AI replies are naturally longer than a typed question.',
+                    maxItems: 4,
                     items: {
-                      type: 'object',
-                      properties: {
-                        role: { type: 'string', enum: ['user', 'assistant'] },
-                        content: { type: 'string', minLength: 1, maxLength: 1000 },
-                      },
-                      required: ['role', 'content'],
+                      description: 'Shape depends on role: user-role content is capped like the live message field; assistant-role content (an AI reply echoed back for context) allows up to 2000 characters.',
+                      oneOf: [
+                        {
+                          type: 'object',
+                          properties: {
+                            role: { type: 'string', enum: ['user'] },
+                            content: { type: 'string', minLength: 1, maxLength: 1000 },
+                          },
+                          required: ['role', 'content'],
+                        },
+                        {
+                          type: 'object',
+                          properties: {
+                            role: { type: 'string', enum: ['assistant'] },
+                            content: { type: 'string', minLength: 1, maxLength: 2000 },
+                          },
+                          required: ['role', 'content'],
+                        },
+                      ],
                     },
                   },
                 },
